@@ -4,6 +4,7 @@
 void initAccelerometer();
 void startCalibration();
 bool isCalibrationInProgress();
+void abortCalibration();
 void updateAccelerometer();
 bool isMotionActive();
 bool detectLaunchStart(unsigned long &launchStartMillis);

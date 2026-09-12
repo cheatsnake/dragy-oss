@@ -43,12 +43,13 @@ const unsigned long SATELLITES_FOUND_DURATION_MS = 700;
 const unsigned int SIXTY_REACHED_FREQ_HZ = 1000;
 const unsigned long SIXTY_REACHED_DURATION_MS = 700;
 
-const int TARGET_SPEED_KMH = 60;
+const int TARGET_SPEED_KMH = 100;
 const int RESET_SPEED_KMH = 3;
 const unsigned long RESULT_DISPLAY_DURATION_MS = 20000;
 
-const unsigned long RECALIBRATION_INTERVAL_MS = 5000;
-const float RECALIBRATION_MAX_SPEED_KMH = 0.5f;
+const float MOVING_SPEED_KMH = 1.0f;
+const unsigned long RECALIBRATION_SETTLE_TIME_MS = 3000;
+const float HISTORY_RESET_BIAS_CHANGE_G = 0.05f;
 
 const int ACCELEROMETER_HISTORY_SIZE = 16;
 const int LAUNCH_CONFIRM_SAMPLES = 4;

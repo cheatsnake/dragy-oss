@@ -96,11 +96,21 @@ static void finishCalibration() {
     verticalAxisIndex = 2;
   }
 
+  bool biasChangedMaterially = fabsf(biasXG - averageXG) > HISTORY_RESET_BIAS_CHANGE_G ||
+                               fabsf(biasYG - averageYG) > HISTORY_RESET_BIAS_CHANGE_G ||
+                               fabsf(biasZG - averageZG) > HISTORY_RESET_BIAS_CHANGE_G;
+
   biasXG = averageXG;
   biasYG = averageYG;
   biasZG = averageZG;
 
   calibrationActive = false;
+
+  if (biasChangedMaterially) {
+    clearSampleHistory();
+    filteredHorizontalAccelerationG = 0.0f;
+    motionActive = false;
+  }
 }
 
 static bool calibrationMovedTooMuch(float gX, float gY, float gZ) {
@@ -127,7 +137,7 @@ static void collectCalibrationSample() {
   float gZ = rawZ * ACCELERATION_SCALE_G_PER_BIT;
 
   if (calibrationSamplesCollected > 0 && calibrationMovedTooMuch(gX, gY, gZ)) {
-    calibrationActive = false;
+    abortCalibration();
     return;
   }
 
@@ -205,11 +215,14 @@ void startCalibration() {
   calibrationSumRawY = 0;
   calibrationSumRawZ = 0;
   lastCalibrationSampleMillis = millis();
-  clearSampleHistory();
 }
 
 bool isCalibrationInProgress() {
   return calibrationActive;
+}
+
+void abortCalibration() {
+  calibrationActive = false;
 }
 
 bool isMotionActive() {
@@ -241,19 +254,14 @@ bool detectLaunchStart(unsigned long &launchStartMillis) {
 void updateAccelerometer() {
   unsigned long now = millis();
 
-  if (calibrationActive) {
-    if (now - lastCalibrationSampleMillis < CALIBRATION_SAMPLE_INTERVAL_MS) {
-      return;
-    }
+  if (calibrationActive && now - lastCalibrationSampleMillis >= CALIBRATION_SAMPLE_INTERVAL_MS) {
     lastCalibrationSampleMillis = now;
     collectCalibrationSample();
-    return;
   }
 
   if (now - lastSampleMillis < ACCELEROMETER_INTERVAL_MS) {
     return;
   }
-  
   lastSampleMillis = now;
   sampleAndFilterAcceleration();
 }

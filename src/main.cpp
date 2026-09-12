@@ -28,8 +28,11 @@ static float stallCheckStartSpeedKmh = 0.0f;
 static unsigned long armStartMillis = 0;
 static unsigned long stallCheckStartMillis = 0;
 
+static bool carMovedSinceLastCalibration = false;
+static bool carStationary = false;
+static unsigned long carStationarySinceMillis = 0;
+
 static unsigned long lastDisplayUpdateMillis = 0;
-static unsigned long lastCalibrationMillis = 0;
 static bool calibrationDotOn = false;
 
 static void startBenchRun(unsigned long launchStartMillis) {
@@ -39,6 +42,7 @@ static void startBenchRun(unsigned long launchStartMillis) {
   stallCheckStartSpeedKmh = speedAtArmKmh;
   armStartMillis = millis();
   stallCheckStartMillis = armStartMillis;
+  abortCalibration();
   currentStage = STAGE_BENCH_ARMING;
 }
 
@@ -71,17 +75,28 @@ static void runFirstCalibrationStage() {
   if (isCalibrationInProgress()) {
     return;
   }
-  lastCalibrationMillis = millis();
   currentStage = STAGE_READY;
 }
 
 static void runReadyStage() {
   float speedKmh = getSpeedKmh();
 
-  if (speedKmh <= RECALIBRATION_MAX_SPEED_KMH && !isCalibrationInProgress() &&
-      millis() - lastCalibrationMillis >= RECALIBRATION_INTERVAL_MS) {
+  if (isCalibrationInProgress() && speedKmh > MOVING_SPEED_KMH) {
+    abortCalibration();
+  }
+
+  if (speedKmh > MOVING_SPEED_KMH) {
+    carMovedSinceLastCalibration = true;
+    carStationary = false;
+  } else if (!carStationary) {
+    carStationary = true;
+    carStationarySinceMillis = millis();
+  }
+
+  if (carMovedSinceLastCalibration && carStationary &&
+      millis() - carStationarySinceMillis >= RECALIBRATION_SETTLE_TIME_MS) {
     startCalibration();
-    lastCalibrationMillis = millis();
+    carMovedSinceLastCalibration = false;
   }
 
   unsigned long launchStartMillis = 0;
