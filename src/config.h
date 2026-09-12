@@ -48,6 +48,19 @@ const int RESET_SPEED_KMH = 3;
 const unsigned long RESULT_DISPLAY_DURATION_MS = 20000;
 
 const unsigned long RECALIBRATION_INTERVAL_MS = 5000;
+const float RECALIBRATION_MAX_SPEED_KMH = 0.5f;
+
+const int ACCELEROMETER_HISTORY_SIZE = 16;
+const int LAUNCH_CONFIRM_SAMPLES = 4;
+const float CALIBRATION_ABORT_DEVIATION_G = 0.3f;
+const float LAUNCH_MAX_START_SPEED_KMH = 3.0f;
+const float LAUNCH_CONFIRM_SPEED_DELTA_KMH = 4.0f;
+const unsigned long LAUNCH_CONFIRM_WINDOW_MS = 3000;
+
+const int SPEED_HISTORY_SIZE = 12;
+const float BENCH_ABORT_SPEED_DROP_KMH = 3.0f;
+const unsigned long BENCH_STALL_TIMEOUT_MS = 3000;
+const float BENCH_MIN_PROGRESS_KMH = 0.5f;
 
 const unsigned long DISPLAY_INTERVAL_MS = 200;
 const unsigned long ACCELEROMETER_INTERVAL_MS = 100;

@@ -38,6 +38,7 @@ static void drawCalibrationDotTopRight(bool dotOn) {
   if (!dotOn) {
     return;
   }
+
   display.fillCircle(SCREEN_WIDTH_PX - CALIBRATION_DOT_MARGIN_PX, CALIBRATION_DOT_MARGIN_PX,
                      CALIBRATION_DOT_RADIUS_PX, SSD1306_WHITE);
 }
@@ -63,10 +64,12 @@ bool initDisplay() {
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS, true, false)) {
     return false;
   }
+
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   display.setTextWrap(false);
   display.display();
+  
   return true;
 }
 

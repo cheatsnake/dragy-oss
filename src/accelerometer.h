@@ -6,5 +6,6 @@ void startCalibration();
 bool isCalibrationInProgress();
 void updateAccelerometer();
 bool isMotionActive();
+bool detectLaunchStart(unsigned long &launchStartMillis);
 
 #endif

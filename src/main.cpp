@@ -11,6 +11,7 @@ enum Stage {
   STAGE_SEARCHING_GPS,
   STAGE_CALIBRATING_FIRST,
   STAGE_READY,
+  STAGE_BENCH_ARMING,
   STAGE_BENCH_RUNNING,
   STAGE_SHOWING_RESULT
 };
@@ -21,18 +22,34 @@ static unsigned long benchStartMillis = 0;
 static unsigned long benchFinishMillis = 0;
 static unsigned long resultStartMillis = 0;
 
+static float speedAtArmKmh = 0.0f;
+static float peakSpeedKmh = 0.0f;
+static float stallCheckStartSpeedKmh = 0.0f;
+static unsigned long armStartMillis = 0;
+static unsigned long stallCheckStartMillis = 0;
+
 static unsigned long lastDisplayUpdateMillis = 0;
 static unsigned long lastCalibrationMillis = 0;
 static bool calibrationDotOn = false;
 
-static void startBenchRun() {
-  benchStartMillis = millis();
-  currentStage = STAGE_BENCH_RUNNING;
+static void startBenchRun(unsigned long launchStartMillis) {
+  benchStartMillis = launchStartMillis;
+  speedAtArmKmh = getSpeedKmh();
+  peakSpeedKmh = speedAtArmKmh;
+  stallCheckStartSpeedKmh = speedAtArmKmh;
+  armStartMillis = millis();
+  stallCheckStartMillis = armStartMillis;
+  currentStage = STAGE_BENCH_ARMING;
 }
 
-static void finishBenchRun() {
-  benchFinishMillis = millis();
-  resultStartMillis = benchFinishMillis;
+static void finishBenchRun(unsigned long now) {
+  unsigned long crossingMillis = 0;
+  if (getSpeedCrossingMillis(TARGET_SPEED_KMH, crossingMillis) && crossingMillis > benchStartMillis) {
+    benchFinishMillis = crossingMillis;
+  } else {
+    benchFinishMillis = now;
+  }
+  resultStartMillis = now;
   playSixtyReachedSignal();
   currentStage = STAGE_SHOWING_RESULT;
 }
@@ -59,24 +76,83 @@ static void runFirstCalibrationStage() {
 }
 
 static void runReadyStage() {
-  int speedKmh = getSpeedKmh();
+  float speedKmh = getSpeedKmh();
 
-  if (speedKmh == 0 && !isCalibrationInProgress() &&
+  if (speedKmh <= RECALIBRATION_MAX_SPEED_KMH && !isCalibrationInProgress() &&
       millis() - lastCalibrationMillis >= RECALIBRATION_INTERVAL_MS) {
     startCalibration();
     lastCalibrationMillis = millis();
   }
 
-  if (isMotionActive() && speedKmh <= RESET_SPEED_KMH) {
-    startBenchRun();
+  unsigned long launchStartMillis = 0;
+  if (!detectLaunchStart(launchStartMillis)) {
+    return;
+  }
+
+  float speedAtLaunchKmh = 0.0f;
+  bool speedAtLaunchKnown = getSpeedAtMillis(launchStartMillis, speedAtLaunchKmh);
+  if (speedAtLaunchKnown && speedAtLaunchKmh > LAUNCH_MAX_START_SPEED_KMH) {
+    return;
+  }
+
+  startBenchRun(launchStartMillis);
+}
+
+static void runBenchArmingStage() {
+  unsigned long now = millis();
+  float speedKmh = getSpeedKmh();
+
+  if (speedKmh > peakSpeedKmh) {
+    peakSpeedKmh = speedKmh;
+  }
+
+  if (speedKmh >= TARGET_SPEED_KMH) {
+    finishBenchRun(now);
+    return;
+  }
+
+  if (speedKmh - speedAtArmKmh >= LAUNCH_CONFIRM_SPEED_DELTA_KMH) {
+    stallCheckStartMillis = now;
+    stallCheckStartSpeedKmh = speedKmh;
+    currentStage = STAGE_BENCH_RUNNING;
+    return;
+  }
+
+  if (now - armStartMillis >= LAUNCH_CONFIRM_WINDOW_MS) {
+    resetBenchRun();
+    return;
+  }
+
+  if (!isMotionActive()) {
+    resetBenchRun();
   }
 }
 
 static void runBenchRunningStage() {
-  int speedKmh = getSpeedKmh();
+  unsigned long now = millis();
+  float speedKmh = getSpeedKmh();
 
   if (speedKmh >= TARGET_SPEED_KMH) {
-    finishBenchRun();
+    finishBenchRun(now);
+    return;
+  }
+
+  if (speedKmh > peakSpeedKmh) {
+    peakSpeedKmh = speedKmh;
+  }
+
+  if (now - stallCheckStartMillis >= BENCH_STALL_TIMEOUT_MS) {
+    if (speedKmh - stallCheckStartSpeedKmh >= BENCH_MIN_PROGRESS_KMH) {
+      stallCheckStartMillis = now;
+      stallCheckStartSpeedKmh = speedKmh;
+    } else {
+      resetBenchRun();
+      return;
+    }
+  }
+
+  if (speedKmh < peakSpeedKmh - BENCH_ABORT_SPEED_DROP_KMH) {
+    resetBenchRun();
     return;
   }
 
@@ -101,7 +177,7 @@ static void refreshDisplay() {
 
   calibrationDotOn = !calibrationDotOn;
 
-  int speedKmh = getSpeedKmh();
+  int speedKmh = (int)getSpeedKmh();
   int satelliteCount = getSatelliteCount();
   bool calibrationDotVisible = isCalibrationInProgress() && calibrationDotOn;
 
@@ -113,6 +189,7 @@ static void refreshDisplay() {
       showMessage("Calibration...");
       break;
     case STAGE_READY:
+    case STAGE_BENCH_ARMING:
       showSpeedView(speedKmh, satelliteCount, calibrationDotVisible);
       break;
     case STAGE_BENCH_RUNNING: {
@@ -130,7 +207,6 @@ static void refreshDisplay() {
 
 void setup() {
   Serial.begin(115200);
-
   Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
 
   initSpeaker();
@@ -138,6 +214,7 @@ void setup() {
 
   if (!initDisplay()) {
     Serial.println(F("SSD1306 not found!"));
+    
     while (true) {
       delay(1000);
     }
@@ -159,6 +236,9 @@ void loop() {
       break;
     case STAGE_READY:
       runReadyStage();
+      break;
+    case STAGE_BENCH_ARMING:
+      runBenchArmingStage();
       break;
     case STAGE_BENCH_RUNNING:
       runBenchRunningStage();

@@ -6,6 +6,15 @@
 
 #include "config.h"
 
+struct AccelerometerSample {
+  unsigned long timestampMillis;
+  float horizontalG;
+};
+
+static AccelerometerSample sampleHistory[ACCELEROMETER_HISTORY_SIZE];
+static int sampleHistoryCount = 0;
+static int sampleHistoryIndex = 0;
+
 static float biasXG = 0.0f;
 static float biasYG = 0.0f;
 static float biasZG = 0.0f;
@@ -24,6 +33,26 @@ static long calibrationSumRawZ = 0;
 static unsigned long lastCalibrationSampleMillis = 0;
 static unsigned long lastSampleMillis = 0;
 
+static AccelerometerSample sampleHistoryAt(int index) {
+  int oldestIndex = (sampleHistoryCount < ACCELEROMETER_HISTORY_SIZE) ? 0 : sampleHistoryIndex;
+
+  return sampleHistory[(oldestIndex + index) % ACCELEROMETER_HISTORY_SIZE];
+}
+
+static void pushSampleHistory(unsigned long timestampMillis, float horizontalG) {
+  sampleHistory[sampleHistoryIndex] = {timestampMillis, horizontalG};
+  sampleHistoryIndex = (sampleHistoryIndex + 1) % ACCELEROMETER_HISTORY_SIZE;
+
+  if (sampleHistoryCount < ACCELEROMETER_HISTORY_SIZE) {
+    sampleHistoryCount++;
+  }
+}
+
+static void clearSampleHistory() {
+  sampleHistoryCount = 0;
+  sampleHistoryIndex = 0;
+}
+
 static int16_t readTwoBytesAsSigned() {
   uint8_t lowByte = Wire.read();
   uint8_t highByte = Wire.read();
@@ -33,11 +62,13 @@ static int16_t readTwoBytesAsSigned() {
 static bool readRawAcceleration(int16_t &rawX, int16_t &rawY, int16_t &rawZ) {
   Wire.beginTransmission(ACCELEROMETER_ADDRESS);
   Wire.write(ACCELEROMETER_REGISTER_DATA_START);
+
   if (Wire.endTransmission(false) != 0) {
     return false;
   }
 
   Wire.requestFrom(ACCELEROMETER_ADDRESS, ACCELEROMETER_DATA_BYTES);
+
   if (Wire.available() < ACCELEROMETER_DATA_BYTES) {
     return false;
   }
@@ -72,11 +103,31 @@ static void finishCalibration() {
   calibrationActive = false;
 }
 
+static bool calibrationMovedTooMuch(float gX, float gY, float gZ) {
+  float averageXG = (calibrationSumRawX / (float)calibrationSamplesCollected) * ACCELERATION_SCALE_G_PER_BIT;
+  float averageYG = (calibrationSumRawY / (float)calibrationSamplesCollected) * ACCELERATION_SCALE_G_PER_BIT;
+  float averageZG = (calibrationSumRawZ / (float)calibrationSamplesCollected) * ACCELERATION_SCALE_G_PER_BIT;
+
+  return fabsf(gX - averageXG) > CALIBRATION_ABORT_DEVIATION_G ||
+         fabsf(gY - averageYG) > CALIBRATION_ABORT_DEVIATION_G ||
+         fabsf(gZ - averageZG) > CALIBRATION_ABORT_DEVIATION_G;
+}
+
 static void collectCalibrationSample() {
   int16_t rawX = 0;
   int16_t rawY = 0;
   int16_t rawZ = 0;
+
   if (!readRawAcceleration(rawX, rawY, rawZ)) {
+    return;
+  }
+
+  float gX = rawX * ACCELERATION_SCALE_G_PER_BIT;
+  float gY = rawY * ACCELERATION_SCALE_G_PER_BIT;
+  float gZ = rawZ * ACCELERATION_SCALE_G_PER_BIT;
+
+  if (calibrationSamplesCollected > 0 && calibrationMovedTooMuch(gX, gY, gZ)) {
+    calibrationActive = false;
     return;
   }
 
@@ -94,9 +145,11 @@ static float computeHorizontalAccelerationG(float gX, float gY, float gZ) {
   if (verticalAxisIndex == 0) {
     return sqrtf(gY * gY + gZ * gZ);
   }
+
   if (verticalAxisIndex == 1) {
     return sqrtf(gX * gX + gZ * gZ);
   }
+
   return sqrtf(gX * gX + gY * gY);
 }
 
@@ -105,8 +158,10 @@ static void updateMotionState() {
     if (filteredHorizontalAccelerationG > MOTION_START_THRESHOLD_G) {
       motionActive = true;
     }
+
     return;
   }
+
   if (filteredHorizontalAccelerationG < MOTION_STOP_THRESHOLD_G) {
     motionActive = false;
   }
@@ -116,6 +171,7 @@ static void sampleAndFilterAcceleration() {
   int16_t rawX = 0;
   int16_t rawY = 0;
   int16_t rawZ = 0;
+
   if (!readRawAcceleration(rawX, rawY, rawZ)) {
     return;
   }
@@ -125,6 +181,8 @@ static void sampleAndFilterAcceleration() {
   float gZ = rawZ * ACCELERATION_SCALE_G_PER_BIT - biasZG;
 
   float horizontalG = computeHorizontalAccelerationG(gX, gY, gZ);
+  pushSampleHistory(millis(), horizontalG);
+
   filteredHorizontalAccelerationG =
       horizontalG * BUMP_FILTER_ALPHA +
       filteredHorizontalAccelerationG * (1.0f - BUMP_FILTER_ALPHA);
@@ -147,6 +205,7 @@ void startCalibration() {
   calibrationSumRawY = 0;
   calibrationSumRawZ = 0;
   lastCalibrationSampleMillis = millis();
+  clearSampleHistory();
 }
 
 bool isCalibrationInProgress() {
@@ -155,6 +214,28 @@ bool isCalibrationInProgress() {
 
 bool isMotionActive() {
   return motionActive;
+}
+
+bool detectLaunchStart(unsigned long &launchStartMillis) {
+  if (sampleHistoryCount < LAUNCH_CONFIRM_SAMPLES) {
+    return false;
+  }
+
+  for (int i = 1; i <= LAUNCH_CONFIRM_SAMPLES; i++) {
+    if (sampleHistoryAt(sampleHistoryCount - i).horizontalG <= MOTION_START_THRESHOLD_G) {
+      return false;
+    }
+  }
+
+  int risingStartIndex = sampleHistoryCount - LAUNCH_CONFIRM_SAMPLES;
+  int launchIndex = risingStartIndex;
+
+  while (launchIndex > 0 && sampleHistoryAt(launchIndex - 1).horizontalG >= MOTION_STOP_THRESHOLD_G) {
+    launchIndex--;
+  }
+
+  launchStartMillis = sampleHistoryAt(launchIndex).timestampMillis;
+  return true;
 }
 
 void updateAccelerometer() {
@@ -172,6 +253,7 @@ void updateAccelerometer() {
   if (now - lastSampleMillis < ACCELEROMETER_INTERVAL_MS) {
     return;
   }
+  
   lastSampleMillis = now;
   sampleAndFilterAcceleration();
 }
