@@ -8,8 +8,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PAGE_SOURCE = os.path.join(os.path.dirname(HERE), "src", "page.h")
+BENCH_LOGIC_SCRIPT = os.path.join(HERE, "benchlogic.js")
 MOCK_SCRIPT = os.path.join(HERE, "mock.js")
-INJECTION = '<script src="mock.js"></script>'
+INJECTION = '<script src="benchlogic.js"></script>\n<script src="mock.js"></script>'
 
 
 def load_page():
@@ -35,6 +36,9 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/":
             self._send(200, "text/html; charset=utf-8", load_page().encode("utf-8"))
+        elif path == "/benchlogic.js":
+            with open(BENCH_LOGIC_SCRIPT, "rb") as script:
+                self._send(200, "application/javascript; charset=utf-8", script.read())
         elif path == "/mock.js":
             with open(MOCK_SCRIPT, "rb") as script:
                 self._send(200, "application/javascript; charset=utf-8", script.read())
@@ -50,6 +54,7 @@ def main():
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print("Serving the mocked Dragy UI at http://localhost:%d" % port)
     print("Page extracted live from src/page.h; API/SSE data mocked by test/mock.js")
+    print("Run detection follows the test/benchlogic.js firmware model")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

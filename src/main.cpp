@@ -71,6 +71,7 @@ static void startBenchRun(unsigned long launchStartMillis) {
   armStartMillis = millis();
   stallCheckStartMillis = armStartMillis;
   abortCalibration();
+  notifyLaunchDetected();
   startRunRecording(launchStartMillis);
   setStage(STAGE_BENCH_ARMING);
 }
@@ -154,6 +155,9 @@ static void runReadyStage() {
 
   float speedAtLaunchKmh = 0.0f;
   bool speedAtLaunchKnown = getSpeedAtMillis(launchStartMillis, speedAtLaunchKmh);
+  if (!speedAtLaunchKnown) {
+    speedAtLaunchKnown = getOldestSpeedKmh(speedAtLaunchKmh);
+  }
   if (speedAtLaunchKnown && speedAtLaunchKmh > LAUNCH_MAX_START_SPEED_KMH) {
     return;
   }

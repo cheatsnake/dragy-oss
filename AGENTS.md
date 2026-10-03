@@ -9,6 +9,7 @@ pio run -e esp32-c3-devkitm-1              # build firmware
 pio run -e esp32-c3-devkitm-1 -t upload    # build and flash
 pio device monitor                          # serial console at 115200
 
+node test/detect.test.js                    # run detection-logic unit test (pure JS, no browser)
 python3 test/drive.py                       # headless web UI smoke test (needs chromium + chromedriver)
 python3 test/server.py [port]               # serve the mock UI for manual browsing (default 8000)
 ```
@@ -28,8 +29,8 @@ python3 test/server.py [port]               # serve the mock UI for manual brows
 - `src/server.*` — async HTTP server, API routes and SSE.
 - `src/runrecorder.*` — run sample recording and JSON generation.
 - `src/storage.*` — LittleFS persistence of the last 10 runs (`/runs/<id>.json`) and the selected mode (`/mode`).
-- `test/` — synthetic web UI test: `server.py` extracts the page string from `src/page.h`, `mock.js` replaces `fetch`/`EventSource` with a device model.
-- `test/mock.js` mirrors firmware behavior (modes, launch/confirm/abort rules). When firmware behavior changes, update the mock and `test/drive.py` assertions to match.
+- `test/` — synthetic web UI test: `server.py` extracts the page string from `src/page.h`, `benchlogic.js` + `mock.js` replace `fetch`/`EventSource` with a device model.
+- `test/benchlogic.js` — 1:1 JS port of the firmware run-detection pipeline (`accelerometer.cpp`, `gps.cpp`, the stage logic in `main.cpp`). Used by both `test/detect.test.js` (unit scenarios) and `test/mock.js`. When detection behavior changes in firmware, update this port in the same commit, then `test/mock.js` and `test/drive.py` assertions to match.
 
 Key rules:
 
@@ -48,6 +49,7 @@ Key rules:
 
 ## Verification
 
+- After changing detection logic (`accelerometer.*`, `gps.*`, the stage machine in `main.cpp`), update `test/benchlogic.js` and run `node test/detect.test.js`.
 - After changing `page.h`, `server.*`, or mock behavior, run `python3 test/drive.py` and check that it passes.
 - Screenshots land in `test/screenshots/` (git-ignored).
-- There is no unit test suite for C++ code; the web UI smoke test is the only automated check.
+- There is no unit test suite for C++ code; `test/benchlogic.js` is a hand-kept port, not compiled from the firmware.

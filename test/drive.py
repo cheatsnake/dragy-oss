@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Headless smoke test for the web UI against the synthetic mock (server.py + mock.js)."""
+"""Headless smoke test for the web UI against the synthetic mock (server.py + benchlogic.js + mock.js)."""
 
 import base64
 import json
@@ -175,7 +175,20 @@ def main():
         print("  booted, %s, mode %s" % (satellites.strip(), active_mode))
 
         print("Driving a synthetic 0-100 run...")
+        wait_for(
+            "mock ready to launch",
+            lambda: "ready" in driver.js(
+                "document.getElementById('mock-status').textContent"
+            ),
+        )
         driver.js("document.getElementById('mock-launch').click()")
+        wait_for(
+            "run timer active",
+            lambda: driver.js("document.getElementById('timer').textContent !== ''"),
+            timeout=5,
+        )
+        backdated = driver.js("parseFloat(document.getElementById('timer').textContent)")
+        assert backdated >= 0.25, "timer not backdated to the launch moment: %r" % backdated
         wait_for(
             "result overlay",
             lambda: driver.js("document.getElementById('bigunit').textContent === 's'"),
@@ -184,8 +197,11 @@ def main():
         result_text = driver.js("document.getElementById('bigtext').textContent")
         result_seconds = float(result_text)
         assert 5.0 < result_seconds < 8.0, "implausible result: %s" % result_text
+        time.sleep(1.5)
+        status_text = driver.js("document.getElementById('mock-status').textContent")
+        assert "4 run(s)" in status_text, "unexpected extra runs saved: %r" % status_text
         driver.screenshot("result")
-        print("  0-100 result overlay: %ss" % result_text)
+        print("  0-100 result overlay: %ss (timer backdated %.1fs)" % (result_text, backdated))
 
         print("Checking history and detail views...")
         driver.js("document.getElementById('historybtn').click()")
@@ -232,6 +248,12 @@ def main():
                 "document.querySelector('.modebtn.active').dataset.mode === '0-60'"
             ),
         )
+        wait_for(
+            "mock ready to launch",
+            lambda: "ready" in driver.js(
+                "document.getElementById('mock-status').textContent"
+            ),
+        )
         driver.js("document.getElementById('mock-launch').click()")
         wait_for(
             "0-60 result overlay",
@@ -240,7 +262,10 @@ def main():
         )
         result60_text = driver.js("document.getElementById('bigtext').textContent")
         result60_seconds = float(result60_text)
-        assert 2.5 < result60_seconds < 3.5, "implausible 0-60 result: %s" % result60_text
+        assert 2.5 < result60_seconds < 3.8, "implausible 0-60 result: %s" % result60_text
+        time.sleep(1.5)
+        status_text = driver.js("document.getElementById('mock-status').textContent")
+        assert "5 run(s)" in status_text, "unexpected extra runs saved: %r" % status_text
         driver.screenshot("result60")
         print("  0-60 result overlay: %ss" % result60_text)
 
@@ -260,6 +285,12 @@ def main():
         )
 
         print("Switching to Speedo mid-run: aborts the run and ignores launches...")
+        wait_for(
+            "mock ready to launch",
+            lambda: "ready" in driver.js(
+                "document.getElementById('mock-status').textContent"
+            ),
+        )
         driver.js("document.getElementById('mock-launch').click()")
         wait_for(
             "run timer active",

@@ -229,6 +229,10 @@ bool isMotionActive() {
   return motionActive;
 }
 
+void notifyLaunchDetected() {
+  motionActive = true;
+}
+
 float getFilteredAccelerationG() {
   return filteredHorizontalAccelerationG;
 }

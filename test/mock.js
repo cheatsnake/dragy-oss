@@ -4,6 +4,11 @@
   var MAX_SPEED = 104;
   var PROFILE_POWER = 1.6;
   var TARGETS = { '0-100': 100, '0-60': 60, 'speedo': 0 };
+  var GPS_LAG_MS = 300;
+  var LIFT_MARGIN_MS = 1200;
+  var STOP_SETTLE_MS = 1500;
+  var BRAKE_G = 1.0;
+  var G = 9.81;
 
   function xForTarget(target) {
     return 1 - Math.pow(1 - target / MAX_SPEED, 1 / PROFILE_POWER);
@@ -12,29 +17,25 @@
   var X_100 = xForTarget(100);
   var X_60 = xForTarget(60);
 
-  function targetFor(mode) {
-    return TARGETS[mode] === 100 || TARGETS[mode] === 60 ? TARGETS[mode] : 100;
-  }
-
   function xFor(mode) {
     return mode === '0-60' ? X_60 : X_100;
   }
 
   var sources = [];
   var nextPingAt = 0;
+  var stoppedSince = Date.now();
+  var drive = null;
   var model = {
     stage: 'SEARCHING_GPS',
     mode: '0-100',
     satellites: 0,
     gpsOn: true,
-    speedKmh: 0,
     calibrating: false,
     calibratingUntil: 0,
     nextSatelliteAt: 0,
     lastResultSeconds: null,
     nextId: 1,
-    runs: [],
-    run: null
+    runs: []
   };
 
   function round(value, digits) {
@@ -47,13 +48,9 @@
     return MAX_SPEED * (1 - Math.pow(1 - x, PROFILE_POWER));
   }
 
-  function profileTime(run, speed) {
-    return run.T * (1 - Math.pow(1 - speed / MAX_SPEED, 1 / PROFILE_POWER));
-  }
-
   function profileAccel(run, t) {
     var x = Math.min(Math.max(t / run.T, 0), 1);
-    var dvdt = MAX_SPEED * PROFILE_POWER / run.T * Math.pow(1 - x, PROFILE_POWER - 1);
+    var dvdt = (MAX_SPEED * PROFILE_POWER) / run.T * Math.pow(1 - x, PROFILE_POWER - 1);
     return dvdt / 3.6 / 9.81;
   }
 
@@ -135,83 +132,111 @@
     }, this);
   };
 
-  function stageName() {
-    if (model.run) {
-      return model.run.phase === 'ARMING' ? 'BENCH_ARMING' : 'BENCH_RUNNING';
-    }
-    return model.stage;
+  function benchResult(result) {
+    var entry = {
+      id: model.nextId++,
+      resultSeconds: round(result.resultSeconds, 2),
+      date: fakeDate(),
+      mode: result.mode,
+      samples: result.samples.map(function (sample) {
+        return { t: round(sample.t, 1), s: round(sample.s, 1), a: round(sample.a, 2) };
+      })
+    };
+    model.runs.unshift(entry);
+    model.lastResultSeconds = entry.resultSeconds;
+    updateStatus();
+    dispatch('result', JSON.stringify({
+      id: entry.id,
+      resultSeconds: entry.resultSeconds,
+      date: entry.date,
+      mode: entry.mode
+    }));
   }
 
-  function stateJson() {
-    return {
-      stage: stageName(),
-      mode: model.mode,
-      speedKmh: round(model.speedKmh, 1),
-      satellites: model.satellites,
-      calibrating: model.calibrating,
-      elapsedSeconds: model.run ? round((Date.now() - model.run.launchAt) / 1000, 2) : 0,
-      lastResultSeconds: model.lastResultSeconds
+  var bench = BenchLogic.createBench({ onResult: benchResult });
+
+  function carSpeedAt(t) {
+    if (!drive) {
+      return 0;
+    }
+    if (drive.phase === 'pull') {
+      return t < drive.startAt ? 0 : profileSpeed(drive.run, (t - drive.startAt) / 1000);
+    }
+    if (drive.phase === 'brake') {
+      return Math.max(0, drive.fromSpeed - (BRAKE_G * G * 3.6 * (t - drive.startAt)) / 1000);
+    }
+    return 0;
+  }
+
+  function carAccelAt(t) {
+    if (!drive) {
+      return 0;
+    }
+    if (drive.phase === 'pull' && t >= drive.startAt && t < drive.endAt) {
+      return profileAccel(drive.run, (t - drive.startAt) / 1000);
+    }
+    if (drive.phase === 'brake' && carSpeedAt(t) > 0) {
+      return BRAKE_G;
+    }
+    return 0;
+  }
+
+  function advanceDrive(now) {
+    if (drive && drive.phase === 'pull' && now >= drive.endAt) {
+      var endAt = drive.endAt;
+      drive = {
+        phase: 'brake',
+        startAt: endAt,
+        fromSpeed: profileSpeed(drive.run, (endAt - drive.startAt) / 1000)
+      };
+    }
+    if (drive && drive.phase === 'brake' && carSpeedAt(now) <= 0) {
+      drive = null;
+    }
+    if (carSpeedAt(now) > 0) {
+      stoppedSince = null;
+    } else if (stoppedSince === null) {
+      stoppedSince = now;
+    }
+  }
+
+  function canLaunch() {
+    return model.stage === 'READY' &&
+      bench.getStage() === 'READY' &&
+      bench.getMode() !== 'speedo' &&
+      !drive &&
+      stoppedSince !== null &&
+      Date.now() - stoppedSince >= STOP_SETTLE_MS;
+  }
+
+  function startPull() {
+    if (!canLaunch()) {
+      return;
+    }
+    var now = Date.now();
+    var mode = bench.getMode();
+    var targetSeconds = mode === '0-60' ? 2.9 + Math.random() * 0.3 : 6.9 + Math.random() * 0.4;
+    model.calibrating = false;
+    drive = {
+      phase: 'pull',
+      startAt: now,
+      endAt: now + targetSeconds * 1000 + LIFT_MARGIN_MS,
+      run: { T: targetSeconds / xFor(mode) }
     };
   }
 
+  function brakeCar() {
+    var now = Date.now();
+    var speed = carSpeedAt(now);
+    drive = speed > 0 ? { phase: 'brake', startAt: now, fromSpeed: speed } : null;
+  }
+
   function startCalibration() {
-    if (model.run) {
+    if (bench.getStage() !== 'READY') {
       return;
     }
     model.calibrating = true;
     model.calibratingUntil = Date.now() + 1800;
-  }
-
-  function startRun() {
-    if (model.run || model.mode === 'speedo') {
-      return;
-    }
-    var now = Date.now();
-    model.speedKmh = 0;
-    model.calibrating = false;
-    model.run = {
-      launchAt: now - 400,
-      armUntil: now + 600,
-      phase: 'ARMING',
-      mode: model.mode,
-      T: 6.9 + Math.random() * 0.5,
-      samples: [],
-      nextSampleAt: now - 400
-    };
-  }
-
-  function abortRun() {
-    if (!model.run) {
-      return;
-    }
-    model.run = null;
-    model.speedKmh = 0;
-    model.stage = 'READY';
-  }
-
-  function finishRun() {
-    var run = model.run;
-    var target = targetFor(run.mode);
-    var resultSeconds = round(profileTime(run, target), 2);
-    var entry = {
-      id: model.nextId++,
-      resultSeconds: resultSeconds,
-      date: fakeDate(),
-      mode: run.mode,
-      samples: run.samples
-    };
-    model.runs.unshift(entry);
-    model.lastResultSeconds = resultSeconds;
-    model.run = null;
-    model.stage = 'READY';
-    model.speedKmh = target;
-    updateStatus();
-    dispatch('result', JSON.stringify({
-      id: entry.id,
-      resultSeconds: resultSeconds,
-      date: entry.date,
-      mode: entry.mode
-    }));
   }
 
   function clearRuns() {
@@ -224,10 +249,22 @@
   function toggleGps() {
     model.gpsOn = !model.gpsOn;
     model.nextSatelliteAt = 0;
-    if (!model.gpsOn && !model.run) {
+    if (!model.gpsOn) {
       model.stage = 'SEARCHING_GPS';
     }
     updateStatus();
+  }
+
+  function stateJson() {
+    return {
+      stage: bench.getStage() !== 'READY' ? bench.getStage() : model.stage,
+      mode: model.mode,
+      speedKmh: round(bench.getSpeedKmh(), 1),
+      satellites: model.satellites,
+      calibrating: model.calibrating,
+      elapsedSeconds: round(bench.getElapsedSeconds(Date.now()), 2),
+      lastResultSeconds: model.lastResultSeconds
+    };
   }
 
   function step(now) {
@@ -245,41 +282,20 @@
       }
     }
 
-    if (!model.run) {
-      if (model.stage === 'SEARCHING_GPS') {
-        if (model.gpsOn && model.satellites >= 4 && !model.calibrating) {
-          model.stage = 'CALIBRATING_FIRST';
-          startCalibration();
-        }
-      } else if (model.stage === 'CALIBRATING_FIRST' && !model.calibrating) {
-        model.stage = 'READY';
+    if (model.stage === 'SEARCHING_GPS') {
+      if (model.gpsOn && model.satellites >= 4 && !model.calibrating) {
+        model.stage = 'CALIBRATING_FIRST';
+        startCalibration();
       }
-      if (model.speedKmh > 0) {
-        model.speedKmh = Math.max(0, model.speedKmh - 12);
-      }
-      return;
+    } else if (model.stage === 'CALIBRATING_FIRST' && !model.calibrating) {
+      model.stage = 'READY';
     }
 
-    var t = (now - model.run.launchAt) / 1000;
-    model.speedKmh = profileSpeed(model.run, t);
+    advanceDrive(now);
 
-    while (model.run.nextSampleAt <= now && model.run.samples.length < 400) {
-      var sampleT = (model.run.nextSampleAt - model.run.launchAt) / 1000;
-      model.run.samples.push({
-        t: round(sampleT, 1),
-        s: round(profileSpeed(model.run, sampleT), 1),
-        a: round(profileAccel(model.run, sampleT), 2)
-      });
-      model.run.nextSampleAt += 100;
-    }
+    bench.tick(now, carAccelAt(now), model.gpsOn ? carSpeedAt(now - GPS_LAG_MS) : null);
 
-    if (model.run.phase === 'ARMING' && now >= model.run.armUntil) {
-      model.run.phase = 'RUNNING';
-    }
-
-    if (model.speedKmh >= targetFor(model.run.mode)) {
-      finishRun();
-    }
+    updateStatus();
   }
 
   function jsonResponse(status, payload) {
@@ -331,9 +347,7 @@
       if (!Object.prototype.hasOwnProperty.call(TARGETS, modeValue)) {
         return Promise.resolve(jsonResponse(400, { error: 'invalid mode' }));
       }
-      if (model.run) {
-        abortRun();
-      }
+      bench.setMode(modeValue);
       model.mode = modeValue;
       updateStatus();
       return Promise.resolve(jsonResponse(200, { ok: true, mode: modeValue }));
@@ -347,7 +361,8 @@
   function updateStatus() {
     var status = document.getElementById('mock-status');
     if (status) {
-      status.textContent = model.mode + ' · ' + model.runs.length + ' run(s)';
+      status.textContent = model.mode + ' · ' + model.runs.length + ' run(s) · ' +
+        Math.round(bench.getSpeedKmh()) + ' km/h' + (canLaunch() ? ' · ready' : '');
     }
     var gpsButton = document.getElementById('mock-gps');
     if (gpsButton) {
@@ -378,8 +393,8 @@
     panel.appendChild(tag);
 
     [
-      ['mock-launch', 'Launch', startRun],
-      ['mock-abort', 'Abort run', abortRun],
+      ['mock-launch', 'Launch', startPull],
+      ['mock-abort', 'Abort run', brakeCar],
       ['mock-recal', 'Recalibrate', startCalibration],
       ['mock-gps', 'GPS: on', toggleGps],
       ['mock-clear', 'Clear runs', clearRuns]
@@ -409,13 +424,17 @@
 
   buildPanel();
 
+  var tickCount = 0;
   setInterval(function () {
+    tickCount++;
     var now = Date.now();
     step(now);
-    dispatch('state', JSON.stringify(stateJson()));
+    if (tickCount % 2 === 0) {
+      dispatch('state', JSON.stringify(stateJson()));
+    }
     if (now >= nextPingAt) {
       nextPingAt = now + 1000;
       dispatch('ping', '{}');
     }
-  }, 200);
+  }, 100);
 })();

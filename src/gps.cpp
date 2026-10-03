@@ -104,6 +104,15 @@ bool getSpeedAtMillis(unsigned long timestampMillis, float &speedKmh) {
   return false;
 }
 
+bool getOldestSpeedKmh(float &speedKmh) {
+  if (speedHistoryCount == 0) {
+    return false;
+  }
+
+  speedKmh = speedHistoryAt(0).speedKmh;
+  return true;
+}
+
 bool getGpsDateTime(char *buffer, size_t bufferSize) {
   if (!gpsParser.date.isValid() || !gpsParser.time.isValid()) {
     return false;

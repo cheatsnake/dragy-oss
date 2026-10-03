@@ -7,6 +7,7 @@ bool isCalibrationInProgress();
 void abortCalibration();
 void updateAccelerometer();
 bool isMotionActive();
+void notifyLaunchDetected();
 bool detectLaunchStart(unsigned long &launchStartMillis);
 float getFilteredAccelerationG();
 bool getAccelerationAtMillis(unsigned long timestampMillis, float &accelerationG);
