@@ -41,7 +41,7 @@ body {
 .modebtn.active { background: #fff; color: #000; }
 .center { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
 .big { font-size: clamp(72px, 30vw, 150px); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
-.big .unit { font-size: 0.22em; font-weight: 400; color: #888; margin-left: 0.3em; }
+.big .unit { font-size: 0.5em; font-weight: 400; color: #888; margin-left: 0.3em; }
 .message { font-size: clamp(24px, 8vw, 40px); color: #ddd; text-align: center; }
 .bottomrow { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; min-height: 34px; }
 .actions { display: flex; gap: 12px; }
@@ -92,7 +92,12 @@ body {
 .detailhead .big { font-size: clamp(56px, 22vw, 110px); }
 .detailmode { display: inline-block; font-size: 12px; color: #888; border: 1px solid #444; border-radius: 6px; padding: 2px 8px; margin-top: 8px; }
 .detailmode[hidden] { display: none; }
-.date { font-size: 14px; color: #888; margin-top: 6px; }
+.altresult { font-size: 14px; color: #999; margin-top: 1rem; font-variant-numeric: tabular-nums; }
+.altresult[hidden] { display: none; }
+.date { font-size: 14px; color: #888; }
+#detail .topbar { gap: 8px; }
+#detail .topbar .detailmode { margin-top: 0; font-size: 15px; padding: 8px 14px; }
+#detail .topbar .date { margin-left: auto; }
 .chartbox { margin-top: 16px; }
 .charttitle { font-size: 14px; color: #999; margin-bottom: 4px; }
 canvas { display: block; width: 100%; height: 200px; }
@@ -135,13 +140,13 @@ canvas { display: block; width: 100%; height: 200px; }
 
   <div id="detail" class="view" hidden>
     <div class="topbar">
-      <button id="backhistory" class="btn ghost">&larr; History</button>
-      <div></div>
+      <button id="backhistory" class="btn ghost">&larr;</button>
+      <div id="dmode" class="detailmode" hidden></div>
+      <div id="ddate" class="date"></div>
     </div>
     <div class="detailhead">
       <div class="big"><span id="dresult">0.00</span><span class="unit">s</span></div>
-      <div id="dmode" class="detailmode" hidden></div>
-      <div id="ddate" class="date"></div>
+      <div id="dalt" class="altresult" hidden></div>
     </div>
     <div class="chartbox">
       <div class="charttitle">Speed, km/h</div>
@@ -173,6 +178,7 @@ canvas { display: block; width: 100%; height: 200px; }
   var timerEl = document.getElementById('timer');
   var runlistEl = document.getElementById('runlist');
   var dresultEl = document.getElementById('dresult');
+  var daltEl = document.getElementById('dalt');
   var dmodeEl = document.getElementById('dmode');
   var ddateEl = document.getElementById('ddate');
   var speedchartEl = document.getElementById('speedchart');
@@ -401,6 +407,28 @@ canvas { display: block; width: 100%; height: 200px; }
     ctx.restore();
   }
 
+  function timeToSpeed(samples, target) {
+    if (!samples) {
+      return null;
+    }
+    for (var i = 0; i < samples.length; i++) {
+      var speed = Number(samples[i].s);
+      if (speed >= target) {
+        if (i === 0) {
+          return null;
+        }
+        var prev = samples[i - 1];
+        var prevSpeed = Number(prev.s);
+        var time = Number(samples[i].t);
+        if (speed === prevSpeed) {
+          return time;
+        }
+        return Number(prev.t) + (target - prevSpeed) * (time - Number(prev.t)) / (speed - prevSpeed);
+      }
+    }
+    return null;
+  }
+
   function openHistory() {
     runlistEl.innerHTML = '<div class="empty">Loading...</div>';
     show('history');
@@ -450,6 +478,11 @@ canvas { display: block; width: 100%; height: 200px; }
       return response.json();
     }).then(function (run) {
       dresultEl.textContent = fmtSeconds(run.resultSeconds);
+      var altSeconds = run.mode === '0-100' ? timeToSpeed(run.samples, 60) : null;
+      daltEl.hidden = altSeconds === null;
+      if (altSeconds !== null) {
+        daltEl.textContent = fmtSeconds(altSeconds) + 's (0-60)';
+      }
       dmodeEl.textContent = run.mode || '';
       dmodeEl.hidden = !run.mode;
       ddateEl.textContent = fmtDateTime(run.gpsDateTime);

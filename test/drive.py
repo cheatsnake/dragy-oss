@@ -4,6 +4,7 @@
 import base64
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -246,8 +247,18 @@ def main():
         assert driver.js("document.getElementById('dmode').textContent") == "0-100", (
             "detail mode tag missing"
         )
+        assert driver.js("document.getElementById('dalt').hidden === false"), (
+            "0-60 split missing on the 0-100 detail page"
+        )
+        alt_text = driver.js("document.getElementById('dalt').textContent")
+        alt_match = re.fullmatch(r"(\d+\.\d{2})s \(0-60\)", alt_text)
+        assert alt_match, "unexpected 0-60 split text: %r" % alt_text
+        alt_seconds = float(alt_match.group(1))
+        assert 3.5 < alt_seconds < result_seconds, (
+            "implausible 0-60 split %ss for a %ss run" % (alt_text, detail_result)
+        )
         driver.screenshot("detail")
-        print("  detail charts rendered for %ss" % detail_result)
+        print("  detail charts rendered for %ss (0-60: %s)" % (detail_result, alt_text))
 
         driver.js("document.getElementById('backlive').click()")
         wait_for(
@@ -292,6 +303,19 @@ def main():
         ), "0-60 tag missing from history"
         driver.screenshot("history60")
         print("  history shows 5 runs, newest tagged 0-60")
+
+        driver.click(".runrow")
+        wait_for(
+            "0-60 run detail",
+            lambda: driver.js(
+                "document.getElementById('detail').hidden === false &&"
+                " document.getElementById('dmode').textContent === '0-60'"
+            ),
+        )
+        assert driver.js("document.getElementById('dalt').hidden === true"), (
+            "0-60 split should not be shown on a 0-60 run"
+        )
+        print("  0-60 run detail hides the 0-60 split")
 
         driver.js("document.getElementById('backlive').click()")
         wait_for(
