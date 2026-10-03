@@ -95,7 +95,7 @@ body {
 .date { font-size: 14px; color: #888; margin-top: 6px; }
 .chartbox { margin-top: 16px; }
 .charttitle { font-size: 14px; color: #999; margin-bottom: 4px; }
-canvas { display: block; width: 100%; height: 150px; }
+canvas { display: block; width: 100%; height: 200px; }
 </style>
 </head>
 <body>
@@ -107,7 +107,7 @@ canvas { display: block; width: 100%; height: 150px; }
       <div id="modes" class="modes">
         <button class="modebtn" data-mode="0-100">0&ndash;100</button>
         <button class="modebtn" data-mode="0-60">0&ndash;60</button>
-        <button class="modebtn" data-mode="speedo">Speedo</button>
+        <button class="modebtn" data-mode="speedo">Speed</button>
       </div>
       <div id="caldot" class="caldot" hidden></div>
     </div>
@@ -196,6 +196,29 @@ canvas { display: block; width: 100%; height: 150px; }
     return (isFinite(seconds) ? seconds : 0).toFixed(2);
   }
 
+  function pad2(value) {
+    return (value < 10 ? '0' : '') + value;
+  }
+
+  function fmtDateTime(value) {
+    if (!value) {
+      return 'No GPS date';
+    }
+    var text = String(value);
+    if (text.indexOf('T') === -1) {
+      text = text.replace(' ', 'T');
+    }
+    if (!/(Z|[+-]\d\d:?\d\d)$/.test(text)) {
+      text += 'Z';
+    }
+    var date = new Date(text);
+    if (isNaN(date.getTime())) {
+      return String(value);
+    }
+    return date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate()) + ' ' +
+      pad2(date.getHours()) + ':' + pad2(date.getMinutes()) + ':' + pad2(date.getSeconds());
+  }
+
   function renderMode(mode) {
     modeButtons.forEach(function (button) {
       button.classList.toggle('active', button.dataset.mode === mode);
@@ -281,10 +304,10 @@ canvas { display: block; width: 100%; height: 150px; }
     }
   }
 
-  function drawChart(canvas, samples, pick, signed) {
+  function drawChart(canvas, samples, pick, signed, baseMin, baseMax, step) {
     var dpr = window.devicePixelRatio || 1;
     var width = canvas.clientWidth || 320;
-    var height = canvas.clientHeight || 150;
+    var height = canvas.clientHeight || 200;
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
 
@@ -309,19 +332,21 @@ canvas { display: block; width: 100%; height: 150px; }
     }
 
     var maxT = Number(samples[samples.length - 1].t) || 1;
-    var maxValue = 0;
+    var dataMin = 0;
+    var dataMax = 0;
     samples.forEach(function (sample) {
-      var value = Math.abs(Number(pick(sample)) || 0);
-      if (value > maxValue) {
-        maxValue = value;
+      var value = Number(pick(sample)) || 0;
+      if (value < dataMin) {
+        dataMin = value;
+      }
+      if (value > dataMax) {
+        dataMax = value;
       }
     });
-    if (maxValue <= 0) {
-      maxValue = 1;
-    }
 
-    var minY = signed ? -maxValue : 0;
-    var maxY = maxValue;
+    var epsilon = step / 1000;
+    var maxY = Math.max(baseMax, Math.ceil((dataMax - epsilon) / step) * step);
+    var minY = signed ? Math.min(baseMin, Math.floor((dataMin + epsilon) / step) * step) : 0;
 
     function x(t) {
       return padLeft + (Number(t) / maxT) * plotWidth;
@@ -334,8 +359,8 @@ canvas { display: block; width: 100%; height: 150px; }
     ctx.font = '10px system-ui, sans-serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    for (var i = 0; i <= 2; i++) {
-      var value = minY + (maxY - minY) * i / 2;
+    for (var i = Math.round(minY / step); i <= Math.round(maxY / step); i++) {
+      var value = i * step;
       var gridY = y(value);
       ctx.strokeStyle = '#222';
       ctx.lineWidth = 1;
@@ -344,7 +369,7 @@ canvas { display: block; width: 100%; height: 150px; }
       ctx.lineTo(padLeft + plotWidth, gridY);
       ctx.stroke();
       ctx.fillStyle = '#777';
-      ctx.fillText(signed ? value.toFixed(1) : String(Math.round(value)), padLeft - 5, gridY);
+      ctx.fillText(signed ? (value === 0 ? '0' : value.toFixed(1)) : String(Math.round(value)), padLeft - 5, gridY);
     }
 
     ctx.strokeStyle = '#333';
@@ -354,8 +379,12 @@ canvas { display: block; width: 100%; height: 150px; }
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillText('0', padLeft, padTop + plotHeight + 5);
-    ctx.fillText(maxT.toFixed(1) + ' s', padLeft + plotWidth, padTop + plotHeight + 5);
+    ctx.fillText(maxT.toFixed(1), padLeft + plotWidth, padTop + plotHeight + 5);
 
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(padLeft, padTop, plotWidth, plotHeight);
+    ctx.clip();
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1.5;
     ctx.lineJoin = 'round';
@@ -369,6 +398,7 @@ canvas { display: block; width: 100%; height: 150px; }
       }
     });
     ctx.stroke();
+    ctx.restore();
   }
 
   function openHistory() {
@@ -399,7 +429,7 @@ canvas { display: block; width: 100%; height: 150px; }
         }
         var date = document.createElement('span');
         date.className = 'rundate';
-        date.textContent = run.date || 'No GPS date';
+        date.textContent = fmtDateTime(run.date);
         row.appendChild(result);
         row.appendChild(date);
         row.addEventListener('click', function () {
@@ -422,10 +452,10 @@ canvas { display: block; width: 100%; height: 150px; }
       dresultEl.textContent = fmtSeconds(run.resultSeconds);
       dmodeEl.textContent = run.mode || '';
       dmodeEl.hidden = !run.mode;
-      ddateEl.textContent = run.gpsDateTime || 'No GPS date';
+      ddateEl.textContent = fmtDateTime(run.gpsDateTime);
       show('detail');
-      drawChart(speedchartEl, run.samples, function (sample) { return sample.s; }, false);
-      drawChart(accelchartEl, run.samples, function (sample) { return sample.a; }, true);
+      drawChart(speedchartEl, run.samples, function (sample) { return sample.s; }, false, 0, 100, 20);
+      drawChart(accelchartEl, run.samples, function (sample) { return sample.a; }, true, -0.2, 0.8, 0.2);
     }).catch(function () {
       openHistory();
     });
