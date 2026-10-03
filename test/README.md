@@ -45,9 +45,9 @@ python3 test/drive.py
 
 Requires Chromium and chromedriver. It boots the mock, drives the page through
 READY → 0–100 run → result overlay → history → run detail → 0–60 run → history → Speedo, asserts the
-DOM values (backdated timer, mode tags, a mid-run mode switch aborting the run, Speedo never
-starting a measurement, and no extra runs saved after a finish) and saves screenshots to
-`test/screenshots/` (git-ignored).
+DOM values (backdated timer, mode tags, GPS dates rendered in the browser's local timezone, a mid-run
+mode switch aborting the run, Speedo never starting a measurement, and no extra runs saved after a
+finish) and saves screenshots to `test/screenshots/` (git-ignored).
 
 ## Detection-logic test
 

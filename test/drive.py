@@ -212,8 +212,23 @@ def main():
         assert driver.js(
             "document.querySelector('#runlist .runrow .runmode').textContent === '0-100'"
         ), "0-100 tag missing from history"
+        expected_local = driver.js(
+            "(function () {"
+            " var d = new Date('2026-09-28T18:47:09Z');"
+            " function p(v) { return (v < 10 ? '0' : '') + v; }"
+            " return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' +"
+            " p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());"
+            "})()"
+        )
+        listed_date = driver.js(
+            "document.querySelectorAll('#runlist .runrow')[2].querySelector('.rundate').textContent"
+        )
+        assert listed_date == expected_local, (
+            "GPS date not rendered in the client timezone: %r != %r"
+            % (listed_date, expected_local)
+        )
         driver.screenshot("history")
-        print("  history shows 4 runs (including the seeded no-date run)")
+        print("  history shows 4 runs (including the seeded no-date run), GPS date in local time")
 
         driver.click(".runrow")
         wait_for(
