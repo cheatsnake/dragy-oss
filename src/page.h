@@ -41,6 +41,7 @@ body {
 .big .unit { font-size: 0.22em; font-weight: 400; color: #888; margin-left: 0.3em; }
 .message { font-size: clamp(24px, 8vw, 40px); color: #ddd; text-align: center; }
 .bottomrow { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; min-height: 34px; }
+.actions { display: flex; gap: 12px; }
 .timer { font-size: 22px; color: #bbb; font-variant-numeric: tabular-nums; }
 .timer .unit { font-size: 12px; color: #666; margin-left: 3px; }
 .btn {
@@ -104,10 +105,12 @@ canvas { display: block; width: 100%; height: 150px; }
       <div id="bigvalue" class="big" hidden><span id="bigtext">0</span><span id="bigunit" class="unit"></span></div>
     </div>
     <div class="bottomrow">
-      <button id="historybtn" class="btn ghost">History</button>
+      <div class="actions">
+        <button id="historybtn" class="btn ghost">History</button>
+        <button id="recalbtn" class="btn ghost">Recalibrate</button>
+      </div>
       <div id="timer" class="timer"></div>
     </div>
-    <button id="recalbtn" class="btn">Recalibrate</button>
   </div>
 
   <div id="history" class="view" hidden>

@@ -26,7 +26,7 @@ On power-up the device starts a Wi-Fi access point:
 | Setting | Value |
 |---|---|
 | SSID | `Dragy` |
-| Password | `dragybench` |
+| Password | `11112222` |
 | URL | http://192.168.4.1 |
 
 The page can be tested on a computer without the device via `test/` (see `test/README.md`).

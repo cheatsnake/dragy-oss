@@ -59,6 +59,6 @@ const char RUNS_DIRECTORY[] = "/runs";
 const char RUN_NEXT_ID_PATH[] = "/runs/nextid";
 
 const char WIFI_AP_SSID[] = "Dragy";
-const char WIFI_AP_PASSWORD[] = "dragybench";
+const char WIFI_AP_PASSWORD[] = "11112222";
 
 #endif
