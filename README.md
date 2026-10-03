@@ -1,6 +1,6 @@
-# Car-bench
+# Dragy OSS
 
-Firmware for a car performance timer ("dragy") with 0–100 km/h and 0–60 km/h measurement modes plus a plain speedometer mode, built on an ESP32-C3 SuperMini with a GPS module and an ADXL345/346 accelerometer. The UI is being migrated from a local OLED display and speaker to a Wi-Fi served web page (see `plan.md`); the device currently exposes a Wi-Fi access point with a live web UI, a JSON/SSE API and run history persisted in flash.
+Firmware for a car performance timer ("dragy") with 0–100 km/h and 0–60 km/h measurement modes plus a plain speedometer mode, built on an ESP32-C3 SuperMini with a GPS module and an ADXL345/346 accelerometer. The UI is being migrated from a local OLED display and speaker to a Wi-Fi served web page; the device currently exposes a Wi-Fi access point with a live web UI, a JSON/SSE API and run history persisted in flash.
 
 ## Hardware
 
