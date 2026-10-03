@@ -56,7 +56,7 @@ void updateRunRecording() {
   }
 }
 
-bool finishRunRecording(float resultSeconds, RunMeta &meta) {
+bool finishRunRecording(float resultSeconds, const char *mode, RunMeta &meta) {
   recordingActive = false;
 
   int id = getNextRunId();
@@ -71,7 +71,7 @@ bool finishRunRecording(float resultSeconds, RunMeta &meta) {
     strcpy(dateField, "null");
   }
 
-  size_t capacity = 192 + (size_t)sampleCount * 48;
+  size_t capacity = 224 + (size_t)sampleCount * 48;
   char *json = (char *)malloc(capacity);
   if (json == nullptr) {
     Serial.println(F("Run recorder: out of memory"));
@@ -79,9 +79,10 @@ bool finishRunRecording(float resultSeconds, RunMeta &meta) {
     return false;
   }
 
-  size_t offset = (size_t)snprintf(json, capacity,
-                                   "{\"id\":%d,\"gpsDateTime\":%s,\"resultSeconds\":%.2f,\"samples\":[",
-                                   id, dateField, resultSeconds);
+  size_t offset = (size_t)snprintf(
+      json, capacity,
+      "{\"id\":%d,\"gpsDateTime\":%s,\"resultSeconds\":%.2f,\"mode\":\"%s\",\"samples\":[", id,
+      dateField, resultSeconds, mode);
 
   for (int i = 0; i < sampleCount; i++) {
     const RunSample &sample = samples[i];
@@ -108,6 +109,8 @@ bool finishRunRecording(float resultSeconds, RunMeta &meta) {
 
   meta.id = savedId;
   meta.resultSeconds = resultSeconds;
+  strncpy(meta.mode, mode, sizeof(meta.mode) - 1);
+  meta.mode[sizeof(meta.mode) - 1] = '\0';
   if (haveDate) {
     strncpy(meta.date, date, sizeof(meta.date) - 1);
     meta.date[sizeof(meta.date) - 1] = '\0';

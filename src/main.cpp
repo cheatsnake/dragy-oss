@@ -18,6 +18,7 @@ enum Stage {
 };
 
 static Stage currentStage = STAGE_SEARCHING_GPS;
+static BenchMode currentBenchMode = BENCH_MODE_0_100;
 
 static unsigned long benchStartMillis = 0;
 
@@ -78,18 +79,21 @@ static void finishBenchRun(unsigned long now) {
   unsigned long crossingMillis = 0;
   float resultSeconds = 0.0f;
 
-  if (getSpeedCrossingMillis(TARGET_SPEED_KMH, crossingMillis) && crossingMillis > benchStartMillis) {
+  int targetSpeedKmh = benchModeTargetSpeedKmh(currentBenchMode);
+  if (getSpeedCrossingMillis(targetSpeedKmh, crossingMillis) && crossingMillis > benchStartMillis) {
     resultSeconds = (crossingMillis - benchStartMillis) / 1000.0f;
   } else {
     resultSeconds = (now - benchStartMillis) / 1000.0f;
   }
 
-  Serial.print(F("Run finished: "));
+  Serial.print(F("Run finished ("));
+  Serial.print(benchModeName(currentBenchMode));
+  Serial.print(F("): "));
   Serial.print(resultSeconds, 2);
   Serial.println(F(" s"));
 
   RunMeta meta;
-  if (finishRunRecording(resultSeconds, meta)) {
+  if (finishRunRecording(resultSeconds, benchModeName(currentBenchMode), meta)) {
     lastResultSeconds = meta.resultSeconds;
     hasLastResult = true;
     publishRunResult(meta);
@@ -139,6 +143,10 @@ static void runReadyStage() {
     carMovedSinceLastCalibration = false;
   }
 
+  if (!benchModeMeasures(currentBenchMode)) {
+    return;
+  }
+
   unsigned long launchStartMillis = 0;
   if (!detectLaunchStart(launchStartMillis)) {
     return;
@@ -161,7 +169,7 @@ static void runBenchArmingStage() {
     peakSpeedKmh = speedKmh;
   }
 
-  if (speedKmh >= TARGET_SPEED_KMH) {
+  if (speedKmh >= benchModeTargetSpeedKmh(currentBenchMode)) {
     finishBenchRun(now);
     return;
   }
@@ -187,7 +195,7 @@ static void runBenchRunningStage() {
   unsigned long now = millis();
   float speedKmh = getSpeedKmh();
 
-  if (speedKmh >= TARGET_SPEED_KMH) {
+  if (speedKmh >= benchModeTargetSpeedKmh(currentBenchMode)) {
     finishBenchRun(now);
     return;
   }
@@ -219,6 +227,7 @@ static void runBenchRunningStage() {
 static void publishCurrentUiState(unsigned long now) {
   UiState state;
   state.stage = stageName(currentStage);
+  state.mode = benchModeName(currentBenchMode);
   state.speedKmh = getSpeedKmh();
   state.satellites = getSatelliteCount();
   state.calibrating = isCalibrationInProgress();
@@ -237,6 +246,14 @@ void setup() {
   initAccelerometer();
   initGps();
   initStorage();
+
+  char storedMode[16];
+  if (loadStoredMode(storedMode, sizeof(storedMode))) {
+    int storedModeIndex = benchModeIndexFromName(storedMode);
+    if (storedModeIndex >= 0) {
+      currentBenchMode = (BenchMode)storedModeIndex;
+    }
+  }
 
   float storedResultSeconds = 0.0f;
   if (getLatestRunResult(storedResultSeconds)) {
@@ -258,6 +275,17 @@ void loop() {
     clearRecalibrationRequest();
     Serial.println(F("Recalibration requested"));
     startCalibration();
+  }
+
+  int requestedModeIndex = takeModeChangeRequest();
+  if (requestedModeIndex >= 0 && requestedModeIndex != (int)currentBenchMode) {
+    if (currentStage == STAGE_BENCH_ARMING || currentStage == STAGE_BENCH_RUNNING) {
+      resetBenchRun();
+    }
+    currentBenchMode = (BenchMode)requestedModeIndex;
+    saveStoredMode(benchModeName(currentBenchMode));
+    Serial.print(F("Mode: "));
+    Serial.println(benchModeName(currentBenchMode));
   }
 
   switch (currentStage) {

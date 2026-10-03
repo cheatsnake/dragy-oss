@@ -36,6 +36,9 @@ body {
 .caldot { width: 14px; height: 14px; border-radius: 50%; background: #fff; animation: pulse 1s ease-in-out infinite alternate; }
 .caldot[hidden] { display: none; }
 @keyframes pulse { from { opacity: 1; } to { opacity: 0.15; } }
+.modes { display: flex; gap: 4px; padding: 2px; border: 1px solid #444; border-radius: 10px; }
+.modebtn { padding: 5px 9px; background: none; border: 0; border-radius: 7px; color: #888; font: inherit; font-size: 13px; cursor: pointer; }
+.modebtn.active { background: #fff; color: #000; }
 .center { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
 .big { font-size: clamp(72px, 30vw, 150px); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
 .big .unit { font-size: 0.22em; font-weight: 400; color: #888; margin-left: 0.3em; }
@@ -81,11 +84,14 @@ body {
 .runrow:active { background: #111; }
 .runresult { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .runresult .unit { font-size: 14px; font-weight: 400; color: #888; margin-left: 2px; }
+.runmode { font-size: 11px; font-weight: 400; color: #888; border: 1px solid #444; border-radius: 6px; padding: 1px 6px; margin-left: 8px; vertical-align: middle; }
 .rundate { font-size: 13px; color: #888; }
 .empty { color: #666; text-align: center; padding: 32px 0; }
 #detail { overflow-y: auto; }
 .detailhead { text-align: center; padding: 8px 0 4px; }
 .detailhead .big { font-size: clamp(56px, 22vw, 110px); }
+.detailmode { display: inline-block; font-size: 12px; color: #888; border: 1px solid #444; border-radius: 6px; padding: 2px 8px; margin-top: 8px; }
+.detailmode[hidden] { display: none; }
 .date { font-size: 14px; color: #888; margin-top: 6px; }
 .chartbox { margin-top: 16px; }
 .charttitle { font-size: 14px; color: #999; margin-bottom: 4px; }
@@ -98,6 +104,11 @@ canvas { display: block; width: 100%; height: 150px; }
   <div id="live" class="view">
     <div class="topbar">
       <div id="sats" class="sats"></div>
+      <div id="modes" class="modes">
+        <button class="modebtn" data-mode="0-100">0&ndash;100</button>
+        <button class="modebtn" data-mode="0-60">0&ndash;60</button>
+        <button class="modebtn" data-mode="speedo">Speedo</button>
+      </div>
       <div id="caldot" class="caldot" hidden></div>
     </div>
     <div class="center">
@@ -129,6 +140,7 @@ canvas { display: block; width: 100%; height: 150px; }
     </div>
     <div class="detailhead">
       <div class="big"><span id="dresult">0.00</span><span class="unit">s</span></div>
+      <div id="dmode" class="detailmode" hidden></div>
       <div id="ddate" class="date"></div>
     </div>
     <div class="chartbox">
@@ -153,6 +165,7 @@ canvas { display: block; width: 100%; height: 150px; }
   };
   var satsEl = document.getElementById('sats');
   var caldotEl = document.getElementById('caldot');
+  var modeButtons = Array.prototype.slice.call(document.querySelectorAll('.modebtn'));
   var messageEl = document.getElementById('message');
   var bigvalueEl = document.getElementById('bigvalue');
   var bigtextEl = document.getElementById('bigtext');
@@ -160,6 +173,7 @@ canvas { display: block; width: 100%; height: 150px; }
   var timerEl = document.getElementById('timer');
   var runlistEl = document.getElementById('runlist');
   var dresultEl = document.getElementById('dresult');
+  var dmodeEl = document.getElementById('dmode');
   var ddateEl = document.getElementById('ddate');
   var speedchartEl = document.getElementById('speedchart');
   var accelchartEl = document.getElementById('accelchart');
@@ -168,6 +182,7 @@ canvas { display: block; width: 100%; height: 150px; }
   var resultMode = false;
   var resultTimer = null;
   var currentView = 'live';
+  var shownMode = null;
 
   function show(name) {
     currentView = name;
@@ -179,6 +194,12 @@ canvas { display: block; width: 100%; height: 150px; }
   function fmtSeconds(value) {
     var seconds = Number(value);
     return (isFinite(seconds) ? seconds : 0).toFixed(2);
+  }
+
+  function renderMode(mode) {
+    modeButtons.forEach(function (button) {
+      button.classList.toggle('active', button.dataset.mode === mode);
+    });
   }
 
   function showMessage(text) {
@@ -199,7 +220,15 @@ canvas { display: block; width: 100%; height: 150px; }
     satsEl.innerHTML = next.satellites + '<span class="satlabel"> sats</span>';
     caldotEl.hidden = !next.calibrating;
 
+    var modeChanged = shownMode !== null && shownMode !== next.mode;
+    shownMode = next.mode;
+    renderMode(next.mode);
+
     if (next.stage === 'BENCH_ARMING' || next.stage === 'BENCH_RUNNING') {
+      clearResult();
+    }
+
+    if (modeChanged) {
       clearResult();
     }
 
@@ -362,6 +391,12 @@ canvas { display: block; width: 100%; height: 150px; }
         var result = document.createElement('span');
         result.className = 'runresult';
         result.innerHTML = fmtSeconds(run.resultSeconds) + '<span class="unit">s</span>';
+        if (run.mode) {
+          var modeTag = document.createElement('span');
+          modeTag.className = 'runmode';
+          modeTag.textContent = run.mode;
+          result.appendChild(modeTag);
+        }
         var date = document.createElement('span');
         date.className = 'rundate';
         date.textContent = run.date || 'No GPS date';
@@ -385,6 +420,8 @@ canvas { display: block; width: 100%; height: 150px; }
       return response.json();
     }).then(function (run) {
       dresultEl.textContent = fmtSeconds(run.resultSeconds);
+      dmodeEl.textContent = run.mode || '';
+      dmodeEl.hidden = !run.mode;
       ddateEl.textContent = run.gpsDateTime || 'No GPS date';
       show('detail');
       drawChart(speedchartEl, run.samples, function (sample) { return sample.s; }, false);
@@ -401,6 +438,12 @@ canvas { display: block; width: 100%; height: 150px; }
   });
   document.getElementById('recalbtn').addEventListener('click', function () {
     fetch('/api/recalibrate', { method: 'POST' }).catch(function () {});
+  });
+
+  modeButtons.forEach(function (button) {
+    button.addEventListener('click', function () {
+      fetch('/api/mode/' + button.dataset.mode, { method: 'POST' }).catch(function () {});
+    });
   });
 
   fetch('/api/state').then(function (response) {

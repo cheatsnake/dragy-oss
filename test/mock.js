@@ -3,12 +3,28 @@
 
   var MAX_SPEED = 104;
   var PROFILE_POWER = 1.6;
-  var X_100 = 1 - Math.pow(1 - 100 / MAX_SPEED, 1 / PROFILE_POWER);
+  var TARGETS = { '0-100': 100, '0-60': 60, 'speedo': 0 };
+
+  function xForTarget(target) {
+    return 1 - Math.pow(1 - target / MAX_SPEED, 1 / PROFILE_POWER);
+  }
+
+  var X_100 = xForTarget(100);
+  var X_60 = xForTarget(60);
+
+  function targetFor(mode) {
+    return TARGETS[mode] === 100 || TARGETS[mode] === 60 ? TARGETS[mode] : 100;
+  }
+
+  function xFor(mode) {
+    return mode === '0-60' ? X_60 : X_100;
+  }
 
   var sources = [];
   var nextPingAt = 0;
   var model = {
     stage: 'SEARCHING_GPS',
+    mode: '0-100',
     satellites: 0,
     gpsOn: true,
     speedKmh: 0,
@@ -53,12 +69,14 @@
     return samples;
   }
 
-  function makeRunEntry(id, resultSeconds, date) {
-    var run = { T: resultSeconds / X_100 };
+  function makeRunEntry(id, resultSeconds, date, mode) {
+    mode = mode || '0-100';
+    var run = { T: resultSeconds / xFor(mode) };
     return {
       id: id,
       resultSeconds: resultSeconds,
       date: date,
+      mode: mode,
       samples: makeSamples(run, resultSeconds + 0.5)
     };
   }
@@ -127,6 +145,7 @@
   function stateJson() {
     return {
       stage: stageName(),
+      mode: model.mode,
       speedKmh: round(model.speedKmh, 1),
       satellites: model.satellites,
       calibrating: model.calibrating,
@@ -144,7 +163,7 @@
   }
 
   function startRun() {
-    if (model.run) {
+    if (model.run || model.mode === 'speedo') {
       return;
     }
     var now = Date.now();
@@ -154,6 +173,7 @@
       launchAt: now - 400,
       armUntil: now + 600,
       phase: 'ARMING',
+      mode: model.mode,
       T: 6.9 + Math.random() * 0.5,
       samples: [],
       nextSampleAt: now - 400
@@ -171,23 +191,26 @@
 
   function finishRun() {
     var run = model.run;
-    var resultSeconds = round(profileTime(run, 100), 2);
+    var target = targetFor(run.mode);
+    var resultSeconds = round(profileTime(run, target), 2);
     var entry = {
       id: model.nextId++,
       resultSeconds: resultSeconds,
       date: fakeDate(),
+      mode: run.mode,
       samples: run.samples
     };
     model.runs.unshift(entry);
     model.lastResultSeconds = resultSeconds;
     model.run = null;
     model.stage = 'READY';
-    model.speedKmh = 100;
+    model.speedKmh = target;
     updateStatus();
     dispatch('result', JSON.stringify({
       id: entry.id,
       resultSeconds: resultSeconds,
-      date: entry.date
+      date: entry.date,
+      mode: entry.mode
     }));
   }
 
@@ -254,7 +277,7 @@
       model.run.phase = 'RUNNING';
     }
 
-    if (model.speedKmh >= 100) {
+    if (model.speedKmh >= targetFor(model.run.mode)) {
       finishRun();
     }
   }
@@ -277,7 +300,7 @@
 
     if (method === 'GET' && path === '/api/runs') {
       return Promise.resolve(jsonResponse(200, model.runs.map(function (run) {
-        return { id: run.id, resultSeconds: run.resultSeconds, date: run.date };
+        return { id: run.id, resultSeconds: run.resultSeconds, date: run.date, mode: run.mode };
       })));
     }
 
@@ -293,6 +316,7 @@
         id: run.id,
         gpsDateTime: run.date || null,
         resultSeconds: run.resultSeconds,
+        mode: run.mode,
         samples: run.samples
       }));
     }
@@ -300,6 +324,19 @@
     if (method === 'POST' && path === '/api/recalibrate') {
       startCalibration();
       return Promise.resolve(jsonResponse(200, { ok: true }));
+    }
+
+    if (method === 'POST' && path.indexOf('/api/mode/') === 0) {
+      var modeValue = path.slice('/api/mode/'.length);
+      if (!Object.prototype.hasOwnProperty.call(TARGETS, modeValue)) {
+        return Promise.resolve(jsonResponse(400, { error: 'invalid mode' }));
+      }
+      if (model.run) {
+        abortRun();
+      }
+      model.mode = modeValue;
+      updateStatus();
+      return Promise.resolve(jsonResponse(200, { ok: true, mode: modeValue }));
     }
 
     return Promise.resolve(new Response('not found', { status: 404 }));
@@ -310,7 +347,7 @@
   function updateStatus() {
     var status = document.getElementById('mock-status');
     if (status) {
-      status.textContent = model.runs.length + ' run(s)';
+      status.textContent = model.mode + ' · ' + model.runs.length + ' run(s)';
     }
     var gpsButton = document.getElementById('mock-gps');
     if (gpsButton) {
@@ -363,9 +400,9 @@
   }
 
   model.runs = [
-    makeRunEntry(3, 6.87, ''),
-    makeRunEntry(2, 6.38, '2026-09-28 18:47:09'),
-    makeRunEntry(1, 6.62, '2026-09-21 08:15:32')
+    makeRunEntry(3, 6.87, '', '0-100'),
+    makeRunEntry(2, 6.38, '2026-09-28 18:47:09', '0-100'),
+    makeRunEntry(1, 6.62, '2026-09-21 08:15:32', '0-100')
   ];
   model.nextId = 4;
   model.lastResultSeconds = 6.87;

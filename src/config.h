@@ -2,6 +2,7 @@
 #define CONFIG_H
 
 #include <Arduino.h>
+#include <string.h>
 
 const int I2C_SDA_PIN = 1;
 const int I2C_SCL_PIN = 0;
@@ -28,8 +29,59 @@ const int CALIBRATION_SAMPLE_COUNT = 50;
 const unsigned long CALIBRATION_SAMPLE_INTERVAL_MS = 20;
 const unsigned long ACCELEROMETER_POWER_UP_DELAY_MS = 200;
 
-const int TARGET_SPEED_KMH = 100;
+const int TARGET_SPEED_0_100_KMH = 100;
+const int TARGET_SPEED_0_60_KMH = 60;
 const int RESET_SPEED_KMH = 3;
+
+enum BenchMode {
+  BENCH_MODE_0_100 = 0,
+  BENCH_MODE_0_60 = 1,
+  BENCH_MODE_SPEEDO = 2
+};
+
+const char MODE_NAME_0_100[] = "0-100";
+const char MODE_NAME_0_60[] = "0-60";
+const char MODE_NAME_SPEEDO[] = "speedo";
+const char MODE_PATH[] = "/mode";
+
+inline const char *benchModeName(BenchMode mode) {
+  switch (mode) {
+    case BENCH_MODE_0_60:
+      return MODE_NAME_0_60;
+    case BENCH_MODE_SPEEDO:
+      return MODE_NAME_SPEEDO;
+    default:
+      return MODE_NAME_0_100;
+  }
+}
+
+inline int benchModeIndexFromName(const char *name) {
+  if (strcmp(name, MODE_NAME_0_100) == 0) {
+    return BENCH_MODE_0_100;
+  }
+  if (strcmp(name, MODE_NAME_0_60) == 0) {
+    return BENCH_MODE_0_60;
+  }
+  if (strcmp(name, MODE_NAME_SPEEDO) == 0) {
+    return BENCH_MODE_SPEEDO;
+  }
+  return -1;
+}
+
+inline int benchModeTargetSpeedKmh(BenchMode mode) {
+  switch (mode) {
+    case BENCH_MODE_0_60:
+      return TARGET_SPEED_0_60_KMH;
+    case BENCH_MODE_SPEEDO:
+      return 0;
+    default:
+      return TARGET_SPEED_0_100_KMH;
+  }
+}
+
+inline bool benchModeMeasures(BenchMode mode) {
+  return mode != BENCH_MODE_SPEEDO;
+}
 
 const float MOVING_SPEED_KMH = 1.0f;
 const unsigned long RECALIBRATION_SETTLE_TIME_MS = 3000;

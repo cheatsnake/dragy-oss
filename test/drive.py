@@ -169,10 +169,12 @@ def main():
         )
         satellites = driver.js("document.getElementById('sats').textContent")
         assert "sats" in satellites, "satellite count missing: %r" % satellites
+        active_mode = driver.js("document.querySelector('.modebtn.active').dataset.mode")
+        assert active_mode == "0-100", "default mode is not 0-100: %r" % active_mode
         driver.screenshot("boot")
-        print("  booted, %s" % satellites.strip())
+        print("  booted, %s, mode %s" % (satellites.strip(), active_mode))
 
-        print("Driving a synthetic run...")
+        print("Driving a synthetic 0-100 run...")
         driver.js("document.getElementById('mock-launch').click()")
         wait_for(
             "result overlay",
@@ -183,7 +185,7 @@ def main():
         result_seconds = float(result_text)
         assert 5.0 < result_seconds < 8.0, "implausible result: %s" % result_text
         driver.screenshot("result")
-        print("  result overlay: %ss" % result_text)
+        print("  0-100 result overlay: %ss" % result_text)
 
         print("Checking history and detail views...")
         driver.js("document.getElementById('historybtn').click()")
@@ -191,6 +193,9 @@ def main():
         assert driver.js(
             "document.getElementById('runlist').textContent.includes('No GPS date')"
         ), "seeded run without GPS date missing from list"
+        assert driver.js(
+            "document.querySelector('#runlist .runrow .runmode').textContent === '0-100'"
+        ), "0-100 tag missing from history"
         driver.screenshot("history")
         print("  history shows 4 runs (including the seeded no-date run)")
 
@@ -207,8 +212,87 @@ def main():
         assert abs(float(detail_result) - result_seconds) < 0.01, (
             "detail result %s does not match %s" % (detail_result, result_text)
         )
+        assert driver.js("document.getElementById('dmode').textContent") == "0-100", (
+            "detail mode tag missing"
+        )
         driver.screenshot("detail")
         print("  detail charts rendered for %ss" % detail_result)
+
+        driver.js("document.getElementById('backlive').click()")
+        wait_for(
+            "live view",
+            lambda: driver.js("document.getElementById('live').hidden === false"),
+        )
+
+        print("Switching to 0-60 and driving a run...")
+        driver.js("document.querySelector('.modebtn[data-mode=\"0-60\"]').click()")
+        wait_for(
+            "0-60 mode active",
+            lambda: driver.js(
+                "document.querySelector('.modebtn.active').dataset.mode === '0-60'"
+            ),
+        )
+        driver.js("document.getElementById('mock-launch').click()")
+        wait_for(
+            "0-60 result overlay",
+            lambda: driver.js("document.getElementById('bigunit').textContent === 's'"),
+            timeout=20,
+        )
+        result60_text = driver.js("document.getElementById('bigtext').textContent")
+        result60_seconds = float(result60_text)
+        assert 2.5 < result60_seconds < 3.5, "implausible 0-60 result: %s" % result60_text
+        driver.screenshot("result60")
+        print("  0-60 result overlay: %ss" % result60_text)
+
+        print("Checking the 0-60 run is stored with its mode...")
+        driver.js("document.getElementById('historybtn').click()")
+        wait_for("history list", lambda: driver.count(".runrow") == 5)
+        assert driver.js(
+            "document.querySelector('#runlist .runrow .runmode').textContent === '0-60'"
+        ), "0-60 tag missing from history"
+        driver.screenshot("history60")
+        print("  history shows 5 runs, newest tagged 0-60")
+
+        driver.js("document.getElementById('backlive').click()")
+        wait_for(
+            "live view",
+            lambda: driver.js("document.getElementById('live').hidden === false"),
+        )
+
+        print("Switching to Speedo mid-run: aborts the run and ignores launches...")
+        driver.js("document.getElementById('mock-launch').click()")
+        wait_for(
+            "run timer active",
+            lambda: driver.js("document.getElementById('timer').textContent !== ''"),
+            timeout=5,
+        )
+        driver.js("document.querySelector('.modebtn[data-mode=\"speedo\"]').click()")
+        wait_for(
+            "speedo mode active",
+            lambda: driver.js(
+                "document.querySelector('.modebtn.active').dataset.mode === 'speedo'"
+            ),
+        )
+        wait_for(
+            "active run aborted",
+            lambda: driver.js(
+                "document.getElementById('timer').textContent === '' &&"
+                " document.getElementById('bigunit').textContent === 'km/h'"
+            ),
+        )
+        driver.js("document.getElementById('mock-launch').click()")
+        time.sleep(2.0)
+        assert (
+            driver.js("document.getElementById('bigunit').textContent") == "km/h"
+        ), "speedo mode started a measurement"
+        assert driver.js("document.getElementById('timer').textContent") == "", (
+            "timer active in speedo mode"
+        )
+        assert driver.js(
+            "document.querySelector('.modebtn.active').dataset.mode"
+        ) == "speedo", "speedo mode not active"
+        driver.screenshot("speedo")
+        print("  run aborted on switch, speedo launch ignored, still showing speed")
 
         print("PASS: web UI flows work against the synthetic mock")
         return 0

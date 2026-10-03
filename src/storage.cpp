@@ -16,6 +16,7 @@ static bool parseRunMeta(const char *json, RunMeta &meta) {
   const char *idField = strstr(json, "\"id\":");
   const char *secondsField = strstr(json, "\"resultSeconds\":");
   const char *dateField = strstr(json, "\"gpsDateTime\":");
+  const char *modeField = strstr(json, "\"mode\":");
 
   if (idField == nullptr || secondsField == nullptr || dateField == nullptr) {
     return false;
@@ -23,6 +24,21 @@ static bool parseRunMeta(const char *json, RunMeta &meta) {
 
   meta.id = atoi(idField + 5);
   meta.resultSeconds = atof(secondsField + 16);
+
+  strcpy(meta.mode, MODE_NAME_0_100);
+  if (modeField != nullptr) {
+    const char *modeValue = modeField + 7;
+    const char *modeStart = strchr(modeValue, '"');
+    const char *modeEnd = (modeStart != nullptr) ? strchr(modeStart + 1, '"') : nullptr;
+    if (modeStart != nullptr && modeEnd != nullptr) {
+      size_t modeLength = (size_t)(modeEnd - modeStart - 1);
+      if (modeLength >= sizeof(meta.mode)) {
+        modeLength = sizeof(meta.mode) - 1;
+      }
+      memcpy(meta.mode, modeStart + 1, modeLength);
+      meta.mode[modeLength] = '\0';
+    }
+  }
 
   const char *dateValue = dateField + 14;
   if (strncmp(dateValue, "null", 4) == 0) {
@@ -212,4 +228,36 @@ fs::File loadRun(int id) {
   char path[32];
   runFilePath(id, path, sizeof(path));
   return LittleFS.open(path, "r");
+}
+
+bool loadStoredMode(char *buffer, size_t bufferSize) {
+  if (bufferSize == 0) {
+    return false;
+  }
+
+  fs::File file = LittleFS.open(MODE_PATH, "r");
+  if (!file) {
+    return false;
+  }
+
+  size_t length = file.readBytes(buffer, bufferSize - 1);
+  file.close();
+  buffer[length] = '\0';
+
+  while (length > 0 && (buffer[length - 1] == '\n' || buffer[length - 1] == '\r' ||
+                        buffer[length - 1] == ' ')) {
+    buffer[--length] = '\0';
+  }
+
+  return length > 0;
+}
+
+void saveStoredMode(const char *mode) {
+  fs::File file = LittleFS.open(MODE_PATH, "w");
+  if (!file) {
+    Serial.println(F("Storage: failed to store mode"));
+    return;
+  }
+  file.print(mode);
+  file.close();
 }

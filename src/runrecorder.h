@@ -7,7 +7,7 @@
 
 void startRunRecording(unsigned long launchStartMillis);
 void updateRunRecording();
-bool finishRunRecording(float resultSeconds, RunMeta &meta);
+bool finishRunRecording(float resultSeconds, const char *mode, RunMeta &meta);
 void abortRunRecording();
 
 #endif
