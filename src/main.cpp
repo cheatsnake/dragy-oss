@@ -3,24 +3,23 @@
 
 #include "accelerometer.h"
 #include "config.h"
-#include "display.h"
 #include "gps.h"
-#include "speaker.h"
+#include "runrecorder.h"
+#include "server.h"
+#include "storage.h"
+#include "wifi.h"
 
 enum Stage {
   STAGE_SEARCHING_GPS,
   STAGE_CALIBRATING_FIRST,
   STAGE_READY,
   STAGE_BENCH_ARMING,
-  STAGE_BENCH_RUNNING,
-  STAGE_SHOWING_RESULT
+  STAGE_BENCH_RUNNING
 };
 
 static Stage currentStage = STAGE_SEARCHING_GPS;
 
 static unsigned long benchStartMillis = 0;
-static unsigned long benchFinishMillis = 0;
-static unsigned long resultStartMillis = 0;
 
 static float speedAtArmKmh = 0.0f;
 static float peakSpeedKmh = 0.0f;
@@ -32,8 +31,36 @@ static bool carMovedSinceLastCalibration = false;
 static bool carStationary = false;
 static unsigned long carStationarySinceMillis = 0;
 
-static unsigned long lastDisplayUpdateMillis = 0;
-static bool calibrationDotOn = false;
+static float lastResultSeconds = 0.0f;
+static bool hasLastResult = false;
+static unsigned long lastUiPublishMillis = 0;
+
+static const char *stageName(Stage stage) {
+  switch (stage) {
+    case STAGE_SEARCHING_GPS:
+      return "SEARCHING_GPS";
+    case STAGE_CALIBRATING_FIRST:
+      return "CALIBRATING_FIRST";
+    case STAGE_READY:
+      return "READY";
+    case STAGE_BENCH_ARMING:
+      return "BENCH_ARMING";
+    case STAGE_BENCH_RUNNING:
+      return "BENCH_RUNNING";
+  }
+
+  return "UNKNOWN";
+}
+
+static void setStage(Stage stage) {
+  if (stage == currentStage) {
+    return;
+  }
+
+  Serial.print(F("Stage: "));
+  Serial.println(stageName(stage));
+  currentStage = stage;
+}
 
 static void startBenchRun(unsigned long launchStartMillis) {
   benchStartMillis = launchStartMillis;
@@ -43,39 +70,52 @@ static void startBenchRun(unsigned long launchStartMillis) {
   armStartMillis = millis();
   stallCheckStartMillis = armStartMillis;
   abortCalibration();
-  currentStage = STAGE_BENCH_ARMING;
+  startRunRecording(launchStartMillis);
+  setStage(STAGE_BENCH_ARMING);
 }
 
 static void finishBenchRun(unsigned long now) {
   unsigned long crossingMillis = 0;
+  float resultSeconds = 0.0f;
+
   if (getSpeedCrossingMillis(TARGET_SPEED_KMH, crossingMillis) && crossingMillis > benchStartMillis) {
-    benchFinishMillis = crossingMillis;
+    resultSeconds = (crossingMillis - benchStartMillis) / 1000.0f;
   } else {
-    benchFinishMillis = now;
+    resultSeconds = (now - benchStartMillis) / 1000.0f;
   }
-  resultStartMillis = now;
-  playSixtyReachedSignal();
-  currentStage = STAGE_SHOWING_RESULT;
+
+  Serial.print(F("Run finished: "));
+  Serial.print(resultSeconds, 2);
+  Serial.println(F(" s"));
+
+  RunMeta meta;
+  if (finishRunRecording(resultSeconds, meta)) {
+    lastResultSeconds = meta.resultSeconds;
+    hasLastResult = true;
+    publishRunResult(meta);
+  }
+
+  setStage(STAGE_READY);
 }
 
 static void resetBenchRun() {
-  currentStage = STAGE_READY;
+  abortRunRecording();
+  setStage(STAGE_READY);
 }
 
 static void runSearchingStage() {
   if (!isFixValid()) {
     return;
   }
-  playSatellitesFoundSignal();
   startCalibration();
-  currentStage = STAGE_CALIBRATING_FIRST;
+  setStage(STAGE_CALIBRATING_FIRST);
 }
 
 static void runFirstCalibrationStage() {
   if (isCalibrationInProgress()) {
     return;
   }
-  currentStage = STAGE_READY;
+  setStage(STAGE_READY);
 }
 
 static void runReadyStage() {
@@ -129,7 +169,7 @@ static void runBenchArmingStage() {
   if (speedKmh - speedAtArmKmh >= LAUNCH_CONFIRM_SPEED_DELTA_KMH) {
     stallCheckStartMillis = now;
     stallCheckStartSpeedKmh = speedKmh;
-    currentStage = STAGE_BENCH_RUNNING;
+    setStage(STAGE_BENCH_RUNNING);
     return;
   }
 
@@ -176,71 +216,49 @@ static void runBenchRunningStage() {
   }
 }
 
-static void runShowingResultStage() {
-  if (millis() - resultStartMillis < RESULT_DISPLAY_DURATION_MS) {
-    return;
-  }
-  resetBenchRun();
-}
-
-static void refreshDisplay() {
-  unsigned long now = millis();
-  if (now - lastDisplayUpdateMillis < DISPLAY_INTERVAL_MS) {
-    return;
-  }
-  lastDisplayUpdateMillis = now;
-
-  calibrationDotOn = !calibrationDotOn;
-
-  int speedKmh = (int)getSpeedKmh();
-  int satelliteCount = getSatelliteCount();
-  bool calibrationDotVisible = isCalibrationInProgress() && calibrationDotOn;
-
-  switch (currentStage) {
-    case STAGE_SEARCHING_GPS:
-      showMessage("Searching signal...");
-      break;
-    case STAGE_CALIBRATING_FIRST:
-      showMessage("Calibration...");
-      break;
-    case STAGE_READY:
-    case STAGE_BENCH_ARMING:
-      showSpeedView(speedKmh, satelliteCount, calibrationDotVisible);
-      break;
-    case STAGE_BENCH_RUNNING: {
-      float elapsedSeconds = (now - benchStartMillis) / 1000.0f;
-      showBenchView(speedKmh, satelliteCount, elapsedSeconds);
-      break;
-    }
-    case STAGE_SHOWING_RESULT: {
-      float finalSeconds = (benchFinishMillis - benchStartMillis) / 1000.0f;
-      showResultView(finalSeconds, speedKmh, satelliteCount);
-      break;
-    }
-  }
+static void publishCurrentUiState(unsigned long now) {
+  UiState state;
+  state.stage = stageName(currentStage);
+  state.speedKmh = getSpeedKmh();
+  state.satellites = getSatelliteCount();
+  state.calibrating = isCalibrationInProgress();
+  state.elapsedSeconds = (currentStage == STAGE_BENCH_ARMING || currentStage == STAGE_BENCH_RUNNING)
+                             ? (now - benchStartMillis) / 1000.0f
+                             : 0.0f;
+  state.lastResultSeconds = lastResultSeconds;
+  state.hasLastResult = hasLastResult;
+  publishUiState(state);
 }
 
 void setup() {
   Serial.begin(115200);
-  Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
 
-  initSpeaker();
   initAccelerometer();
+  initGps();
+  initStorage();
 
-  if (!initDisplay()) {
-    Serial.println(F("SSD1306 not found!"));
-    
-    while (true) {
-      delay(1000);
-    }
+  float storedResultSeconds = 0.0f;
+  if (getLatestRunResult(storedResultSeconds)) {
+    lastResultSeconds = storedResultSeconds;
+    hasLastResult = true;
   }
 
-  initGps();
+  initWifi();
+  initWebServer();
+
+  Serial.println(F("Dragy started"));
 }
 
 void loop() {
   feedGps();
   updateAccelerometer();
+
+  if (isRecalibrationRequested()) {
+    clearRecalibrationRequest();
+    Serial.println(F("Recalibration requested"));
+    startCalibration();
+  }
 
   switch (currentStage) {
     case STAGE_SEARCHING_GPS:
@@ -258,10 +276,13 @@ void loop() {
     case STAGE_BENCH_RUNNING:
       runBenchRunningStage();
       break;
-    case STAGE_SHOWING_RESULT:
-      runShowingResultStage();
-      break;
   }
 
-  refreshDisplay();
+  updateRunRecording();
+
+  unsigned long now = millis();
+  if (now - lastUiPublishMillis >= UI_STATE_INTERVAL_MS) {
+    lastUiPublishMillis = now;
+    publishCurrentUiState(now);
+  }
 }

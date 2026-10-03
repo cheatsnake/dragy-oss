@@ -229,6 +229,23 @@ bool isMotionActive() {
   return motionActive;
 }
 
+float getFilteredAccelerationG() {
+  return filteredHorizontalAccelerationG;
+}
+
+bool getAccelerationAtMillis(unsigned long timestampMillis, float &accelerationG) {
+  for (int i = sampleHistoryCount - 1; i >= 0; i--) {
+    AccelerometerSample sample = sampleHistoryAt(i);
+
+    if (sample.timestampMillis <= timestampMillis) {
+      accelerationG = sample.horizontalG;
+      return true;
+    }
+  }
+
+  return false;
+}
+
 bool detectLaunchStart(unsigned long &launchStartMillis) {
   if (sampleHistoryCount < LAUNCH_CONFIRM_SAMPLES) {
     return false;

@@ -8,5 +8,7 @@ void abortCalibration();
 void updateAccelerometer();
 bool isMotionActive();
 bool detectLaunchStart(unsigned long &launchStartMillis);
+float getFilteredAccelerationG();
+bool getAccelerationAtMillis(unsigned long timestampMillis, float &accelerationG);
 
 #endif

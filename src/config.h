@@ -3,17 +3,8 @@
 
 #include <Arduino.h>
 
-const int OLED_SDA_PIN = 1;
-const int OLED_SCL_PIN = 0;
-const uint8_t OLED_ADDRESS = 0x3C;
-const int SCREEN_WIDTH_PX = 128;
-const int SCREEN_HEIGHT_PX = 64;
-const int FONT_CHAR_WIDTH_PX = 6;
-const int FONT_CHAR_HEIGHT_PX = 8;
-const int BIG_TEXT_SIZE = 4;
-const int SMALL_TEXT_SIZE = 1;
-const int CALIBRATION_DOT_RADIUS_PX = 3;
-const int CALIBRATION_DOT_MARGIN_PX = 4;
+const int I2C_SDA_PIN = 1;
+const int I2C_SCL_PIN = 0;
 
 const int GPS_RX_PIN = 4;
 const int GPS_TX_PIN = 3;
@@ -37,15 +28,8 @@ const int CALIBRATION_SAMPLE_COUNT = 50;
 const unsigned long CALIBRATION_SAMPLE_INTERVAL_MS = 20;
 const unsigned long ACCELEROMETER_POWER_UP_DELAY_MS = 200;
 
-const int SPEAKER_PIN = 10;
-const unsigned int SATELLITES_FOUND_FREQ_HZ = 700;
-const unsigned long SATELLITES_FOUND_DURATION_MS = 700;
-const unsigned int SIXTY_REACHED_FREQ_HZ = 1000;
-const unsigned long SIXTY_REACHED_DURATION_MS = 700;
-
 const int TARGET_SPEED_KMH = 100;
 const int RESET_SPEED_KMH = 3;
-const unsigned long RESULT_DISPLAY_DURATION_MS = 20000;
 
 const float MOVING_SPEED_KMH = 1.0f;
 const unsigned long RECALIBRATION_SETTLE_TIME_MS = 3000;
@@ -63,7 +47,18 @@ const float BENCH_ABORT_SPEED_DROP_KMH = 3.0f;
 const unsigned long BENCH_STALL_TIMEOUT_MS = 3000;
 const float BENCH_MIN_PROGRESS_KMH = 0.5f;
 
-const unsigned long DISPLAY_INTERVAL_MS = 200;
 const unsigned long ACCELEROMETER_INTERVAL_MS = 100;
+
+const unsigned long UI_STATE_INTERVAL_MS = 200;
+const unsigned long SSE_HEARTBEAT_INTERVAL_MS = 1000;
+
+const int MAX_RUNS = 10;
+const unsigned long RUN_SAMPLE_INTERVAL_MS = 100;
+const int RUN_MAX_SAMPLES = 400;
+const char RUNS_DIRECTORY[] = "/runs";
+const char RUN_NEXT_ID_PATH[] = "/runs/nextid";
+
+const char WIFI_AP_SSID[] = "Dragy";
+const char WIFI_AP_PASSWORD[] = "dragybench";
 
 #endif

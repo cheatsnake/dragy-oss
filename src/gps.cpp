@@ -103,3 +103,14 @@ bool getSpeedAtMillis(unsigned long timestampMillis, float &speedKmh) {
 
   return false;
 }
+
+bool getGpsDateTime(char *buffer, size_t bufferSize) {
+  if (!gpsParser.date.isValid() || !gpsParser.time.isValid()) {
+    return false;
+  }
+
+  snprintf(buffer, bufferSize, "%04d-%02d-%02d %02d:%02d:%02d",
+           gpsParser.date.year(), gpsParser.date.month(), gpsParser.date.day(),
+           gpsParser.time.hour(), gpsParser.time.minute(), gpsParser.time.second());
+  return true;
+}
