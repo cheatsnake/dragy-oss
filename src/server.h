@@ -15,8 +15,10 @@ struct UiState {
 };
 
 void initWebServer();
+void stopWebServer();
 void publishUiState(const UiState &state);
 void publishRunResult(const RunMeta &meta);
+void publishSleepNotice();
 bool isRecalibrationRequested();
 void clearRecalibrationRequest();
 int takeModeChangeRequest();

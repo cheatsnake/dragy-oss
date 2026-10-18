@@ -364,6 +364,70 @@ def main():
         driver.screenshot("speedo")
         print("  run aborted on switch, speedo launch ignored, still showing speed")
 
+        print("Sleeping the device after simulated idle minutes...")
+        driver.js("document.getElementById('mock-sleepnow').click()")
+        wait_for(
+            "sleep banner",
+            lambda: driver.js(
+                "document.getElementById('message').hidden === false &&"
+                " document.getElementById('message').textContent.indexOf('asleep') !== -1"
+            ),
+            timeout=5,
+        )
+        driver.screenshot("sleep")
+        print("  device asleep, banner shown")
+
+        print("Movement wakes the device (the launch is consumed by the reboot)...")
+        driver.js("document.getElementById('mock-launch').click()")
+        wait_for(
+            "reboot searching",
+            lambda: driver.js(
+                "document.getElementById('message').hidden === false &&"
+                " document.getElementById('message').textContent.indexOf('Searching') !== -1"
+            ),
+            timeout=5,
+        )
+        time.sleep(1.0)
+        assert driver.js("document.getElementById('timer').textContent === ''"), (
+            "run started while waking from sleep"
+        )
+        print("  device rebooted to GPS search, no run started on wake")
+
+        wait_for(
+            "READY stage after wake",
+            lambda: driver.js(
+                "document.getElementById('bigvalue').hidden === false &&"
+                " document.getElementById('message').hidden === true"
+            ),
+        )
+        driver.js("document.querySelector('.modebtn[data-mode=\"0-100\"]').click()")
+        wait_for(
+            "0-100 mode active after wake",
+            lambda: driver.js(
+                "document.querySelector('.modebtn.active').dataset.mode === '0-100'"
+            ),
+        )
+        wait_for(
+            "mock ready to launch",
+            lambda: "ready" in driver.js(
+                "document.getElementById('mock-status').textContent"
+            ),
+        )
+        driver.js("document.getElementById('mock-launch').click()")
+        wait_for(
+            "result overlay after wake",
+            lambda: driver.js("document.getElementById('bigunit').textContent === 's'"),
+            timeout=20,
+        )
+        result_wake_text = driver.js("document.getElementById('bigtext').textContent")
+        result_wake_seconds = float(result_wake_text)
+        assert 5.0 < result_wake_seconds < 8.0, "implausible result: %s" % result_wake_text
+        time.sleep(1.5)
+        status_text = driver.js("document.getElementById('mock-status').textContent")
+        assert "6 run(s)" in status_text, "unexpected extra runs saved: %r" % status_text
+        driver.screenshot("wake_result")
+        print("  run after wake: %ss, 6 runs stored" % result_wake_text)
+
         print("PASS: web UI flows work against the synthetic mock")
         return 0
     finally:

@@ -6,6 +6,7 @@
 #include "gps.h"
 #include "runrecorder.h"
 #include "server.h"
+#include "sleep.h"
 #include "storage.h"
 #include "wifi.h"
 
@@ -35,6 +36,7 @@ static unsigned long carStationarySinceMillis = 0;
 static float lastResultSeconds = 0.0f;
 static bool hasLastResult = false;
 static unsigned long lastUiPublishMillis = 0;
+static unsigned long lastMotionMillis = 0;
 
 static const char *stageName(Stage stage) {
   switch (stage) {
@@ -245,6 +247,11 @@ static void publishCurrentUiState(unsigned long now) {
 
 void setup() {
   Serial.begin(115200);
+
+  if (wokeByMotion()) {
+    Serial.println(F("Woke by motion"));
+  }
+
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
 
   initAccelerometer();
@@ -308,6 +315,17 @@ void loop() {
     case STAGE_BENCH_RUNNING:
       runBenchRunningStage();
       break;
+  }
+
+  if (currentStage == STAGE_READY || currentStage == STAGE_SEARCHING_GPS) {
+    unsigned long now = millis();
+
+    if (isMotionActive()) {
+      lastMotionMillis = now;
+    } else if (now - lastMotionMillis >= SLEEP_IDLE_TIMEOUT_MS &&
+               getSpeedKmh() < SLEEP_SPEED_GUARD_KMH) {
+      enterSleepMode();
+    }
   }
 
   updateRunRecording();

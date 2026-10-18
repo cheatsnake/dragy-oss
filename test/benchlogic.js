@@ -8,8 +8,9 @@
   'use strict';
 
   // 1:1 JavaScript port of the run detection pipeline in src/accelerometer.cpp,
-  // src/gps.cpp and the stage logic in src/main.cpp. Used by test/detect.test.js
-  // and injected into test/mock.js. Keep in lockstep with the firmware.
+  // src/gps.cpp and the stage and sleep-entry logic in src/main.cpp. Used by
+  // test/detect.test.js and injected into test/mock.js. Keep in lockstep with
+  // the firmware.
 
   var ACCELEROMETER_HISTORY_SIZE = 16;
   var SPEED_HISTORY_SIZE = 12;
@@ -27,6 +28,8 @@
   var ACCELEROMETER_INTERVAL_MS = 100;
   var RUN_SAMPLE_INTERVAL_MS = 100;
   var RUN_MAX_SAMPLES = 400;
+  var SLEEP_IDLE_TIMEOUT_MS = 300000;
+  var SLEEP_SPEED_GUARD_KMH = 2.0;
 
   var TARGET_SPEEDS = { '0-100': 100, '0-60': 60, 'speedo': 0 };
 
@@ -50,14 +53,18 @@
     return this.items[(oldest + i) % this.size];
   };
 
-  function createBench(options) {
-    var listeners = options || {};
+  function createBench(listeners, options) {
+    listeners = listeners || {};
+    options = options || {};
+    var sleepIdleTimeoutMs = options.sleepIdleTimeoutMs || SLEEP_IDLE_TIMEOUT_MS;
 
     var accelHistory = new Ring(ACCELEROMETER_HISTORY_SIZE);
     var speedHistory = new Ring(SPEED_HISTORY_SIZE);
 
     var filteredAccelerationG = 0;
     var motionActive = false;
+    var asleep = false;
+    var lastMotionMillis = null;
 
     var mode = '0-100';
     var stage = 'READY';
@@ -333,6 +340,14 @@
     }
 
     function tick(now, rawG, gpsSpeedKmh) {
+      if (asleep) {
+        return;
+      }
+
+      if (lastMotionMillis === null) {
+        lastMotionMillis = now;
+      }
+
       if (lastAccelMillis === null || now - lastAccelMillis >= ACCELEROMETER_INTERVAL_MS) {
         lastAccelMillis = now;
         pushAccelSample(now, rawG);
@@ -351,6 +366,22 @@
       }
 
       runStage(now);
+
+      if (stage === 'READY' || stage === 'SEARCHING_GPS') {
+        if (motionActive) {
+          lastMotionMillis = now;
+        } else if (
+          now - lastMotionMillis >= sleepIdleTimeoutMs &&
+          getSpeedKmh() < SLEEP_SPEED_GUARD_KMH
+        ) {
+          asleep = true;
+          if (listeners.onSleep) {
+            listeners.onSleep(now);
+          }
+          return;
+        }
+      }
+
       updateRecording(now);
     }
 
@@ -370,6 +401,9 @@
       },
       getStage: function () {
         return stage;
+      },
+      isAsleep: function () {
+        return asleep;
       },
       getSpeedKmh: getSpeedKmh,
       getElapsedSeconds: function (now) {

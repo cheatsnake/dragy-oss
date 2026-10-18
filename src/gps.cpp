@@ -5,6 +5,7 @@
 #include <TinyGPSPlus.h>
 
 #include "config.h"
+#include "sleep.h"
 
 struct SpeedSample {
   unsigned long timestampMillis;
@@ -41,9 +42,21 @@ void initGps() {
   gpsSerial.updateBaudRate(GPS_BAUD_FINAL);
   delay(100);
 
+  if (wokeByMotion()) {
+    gpsSerial.print(GPS_COMMAND_STANDBY_CANCEL);
+    gpsSerial.print(GPS_COMMAND_HOT_RESTART);
+    delay(100);
+  }
+
   gpsSerial.print(GPS_COMMAND_SET_UPDATE_RATE_10HZ);
   gpsSerial.print(GPS_COMMAND_SET_CONSTELLATIONS_GPS_BDS);
   gpsSerial.print(GPS_COMMAND_SAVE_SETTINGS);
+}
+
+void setGpsStandby() {
+  gpsSerial.print(GPS_COMMAND_STANDBY);
+  gpsSerial.flush();
+  delay(100);
 }
 
 void feedGps() {

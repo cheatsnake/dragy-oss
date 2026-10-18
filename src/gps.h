@@ -5,6 +5,7 @@
 
 void initGps();
 void feedGps();
+void setGpsStandby();
 bool isFixValid();
 float getSpeedKmh();
 int getSatelliteCount();

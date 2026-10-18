@@ -6,6 +6,7 @@ void startCalibration();
 bool isCalibrationInProgress();
 void abortCalibration();
 void updateAccelerometer();
+void armSleepWakeup();
 bool isMotionActive();
 void notifyLaunchDetected();
 bool detectLaunchStart(unsigned long &launchStartMillis);

@@ -54,6 +54,14 @@ void publishRunResult(const RunMeta &meta) {
   events.send(buffer, "result");
 }
 
+void publishSleepNotice() {
+  events.send("{}", "sleep");
+}
+
+void stopWebServer() {
+  server.end();
+}
+
 bool isRecalibrationRequested() {
   return recalibrationRequested;
 }

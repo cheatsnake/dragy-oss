@@ -25,6 +25,7 @@ function runBench(config) {
   var results = [];
   var stages = [];
   var benchStarts = [];
+  var sleeps = [];
   var bench = BenchLogic.createBench({
     onStageChange: function (stage, info) {
       stages.push(stage);
@@ -35,6 +36,9 @@ function runBench(config) {
     },
     onResult: function (result) {
       results.push(result);
+    },
+    onSleep: function (now) {
+      sleeps.push(now);
     }
   });
 
@@ -47,7 +51,7 @@ function runBench(config) {
     bench.tick(t, config.rawG(t), config.gpsSpeed(t));
   }
 
-  return { arms: arms, results: results, stages: stages, benchStarts: benchStarts, bench: bench };
+  return { arms: arms, results: results, stages: stages, benchStarts: benchStarts, sleeps: sleeps, bench: bench };
 }
 
 function pullRawG(g, startAt, liftAt) {
@@ -365,6 +369,67 @@ assertRun(
   expectedResult(0, 0.25, 0, 60),
   { expectArms: true }
 );
+
+console.log('Scenario P: five quiet minutes with no GPS put the device to sleep');
+(function () {
+  var run = runBench({
+    mode: '0-100',
+    duration: 320000,
+    rawG: function () {
+      return 0;
+    },
+    gpsSpeed: noGps()
+  });
+  console.log('P:');
+  check('sleeps exactly once', run.sleeps.length === 1, 'sleeps=' + run.sleeps.length);
+  check('sleeps at 300000 ms', run.sleeps[0] === 300000, 'slept at ' + run.sleeps[0]);
+  check('device asleep', run.bench.isAsleep() === true);
+  check('never arms', run.arms === 0, 'arms=' + run.arms);
+})();
+
+console.log('Scenario Q: motion just before the deadline postpones the sleep');
+(function () {
+  var run = runBench({
+    mode: '0-100',
+    duration: 602000,
+    rawG: function (t) {
+      return t >= 299000 && t < 299300 ? 0.45 : 0;
+    },
+    gpsSpeed: noGps()
+  });
+  console.log('Q:');
+  check('motion did not arm a run', run.arms === 0, 'arms=' + run.arms);
+  check('sleeps exactly once', run.sleeps.length === 1, 'sleeps=' + run.sleeps.length);
+  check(
+    'sleeps five minutes after the motion',
+    run.sleeps.length === 1 && run.sleeps[0] > 599000,
+    'slept at ' + (run.sleeps[0] || 0)
+  );
+})();
+
+console.log('Scenario R: quiet accelerometer at a steady 100 km/h never sleeps');
+(function () {
+  var run = runBench({
+    mode: '0-100',
+    duration: 320000,
+    rawG: function () {
+      return 0;
+    },
+    gpsSpeed: function () {
+      return 100;
+    }
+  });
+  console.log('R:');
+  check('never sleeps while driving', run.sleeps.length === 0, 'sleeps=' + run.sleeps.length);
+  check('device still awake', run.bench.isAsleep() === false);
+})();
+
+console.log('Scenario S: a fresh bench models the reboot after sleep');
+(function () {
+  var bench = BenchLogic.createBench({ onSleep: function () {} });
+  console.log('S:');
+  check('fresh boot is awake', bench.isAsleep() === false);
+})();
 
 if (failures > 0) {
   console.log('\nFAILED: ' + failures + ' check(s)');

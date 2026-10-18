@@ -7,7 +7,7 @@ Firmware for a car performance timer ("dragy") with 0–100 km/h and 0–60 km/h
 | Module | Interface | Pins |
 |---|---|---|
 | GPS (PCAS, e.g. ATGM336H) | UART1 | RX=GPIO4, TX=GPIO3, 9600 -> 115200, 10 Hz, GPS+BDS |
-| Accelerometer ADXL345/346 | I2C | SDA=GPIO1, SCL=GPIO0, addr 0x53 |
+| Accelerometer ADXL345/346 | I2C | SDA=GPIO1, SCL=GPIO0, INT1=GPIO5, addr 0x53 |
 
 ## How it works
 
@@ -20,6 +20,10 @@ The firmware runs a state machine with 3 stages:
 The mode switcher on the live screen selects between **0–100**, **0–60** and **Speedo**; Speedo never arms a measurement at all. The selection is stored in flash and restored on power-up. Switching modes aborts any run in progress, and each saved run records the mode it was driven in.
 
 Timing rules: accelerometer samples 10 times per second, GPS is fed continuously. The loop has no `delay()` — everything is scheduled with `millis()`, so calibration never blocks GPS reading. Calibration aborts itself if the car moves, so launch detection is never blocked for long.
+
+## Sleep mode
+
+After 5 minutes without accelerometer movement (and with GPS speed near zero, never mid-run or mid-calibration) the device shuts down to save power: the Wi-Fi AP and web server stop, the GPS module is asked to enter standby (best effort — only some modules honor `$PCAS12`), and the MCU enters deep sleep, leaving only the accelerometer's activity interrupt armed (~50 µA total). Movement above ~0.2 g asserts ADXL345 INT1 on GPIO5, which reboots the device; `setup()` logs "Woke by motion" and sends the GPS a standby-cancel plus hot-restart. The web UI shows a "Device asleep" notice before the AP disappears and reconnects on wake. A launch that starts at the exact moment of waking is missed, since boot and GPS re-fix take a few seconds.
 
 ## Web UI
 
@@ -43,7 +47,7 @@ The page is a single dark, monochrome, dependency-free HTML/CSS/JS app served en
 | GET | `/api/state` | current stage, mode, speed, satellites, calibration, elapsed and last result |
 | GET | `/api/runs` | list of the last runs (`id`, `resultSeconds`, `date`, `mode`), newest first |
 | GET | `/api/runs/{id}` | full run including mode and chart samples |
-| GET | `/events` | SSE stream: `state` every 200 ms, `result` on finish, `ping` heartbeat |
+| GET | `/events` | SSE stream: `state` every 200 ms, `result` on finish, `sleep` when entering sleep mode, `ping` heartbeat |
 | POST | `/api/recalibrate` | request an accelerometer recalibration |
 | POST | `/api/mode/{mode}` | set the mode: `0-100`, `0-60` or `speedo` (aborts an active run) |
 
@@ -58,6 +62,7 @@ src/config.h              all constants (pins, addresses, thresholds, intervals)
 src/main.cpp              setup, loop and the stage state machine
 src/gps.h/.cpp            GPS init, NMEA feeding, speed/satellite accessors
 src/accelerometer.h/.cpp  accelerometer init, calibration, motion detection
+src/sleep.h/.cpp          deep sleep entry, wake cause and module power-down
 src/wifi.h/.cpp           Wi-Fi SoftAP setup
 src/page.h                web UI (HTML/CSS/JS) stored in PROGMEM
 src/server.h/.cpp         async HTTP server, API routes and SSE

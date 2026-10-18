@@ -79,6 +79,28 @@ static bool readRawAcceleration(int16_t &rawX, int16_t &rawY, int16_t &rawZ) {
   return true;
 }
 
+static void writeRegister(uint8_t reg, uint8_t value) {
+  Wire.beginTransmission(ACCELEROMETER_ADDRESS);
+  Wire.write(reg);
+  Wire.write(value);
+  Wire.endTransmission();
+}
+
+static void clearPendingInterrupts() {
+  Wire.beginTransmission(ACCELEROMETER_ADDRESS);
+  Wire.write(ACCELEROMETER_REGISTER_INT_SOURCE);
+
+  if (Wire.endTransmission(false) != 0) {
+    return;
+  }
+
+  Wire.requestFrom(ACCELEROMETER_ADDRESS, 1);
+
+  while (Wire.available() > 0) {
+    Wire.read();
+  }
+}
+
 static void finishCalibration() {
   float averageXG = (calibrationSumRawX / (float)CALIBRATION_SAMPLE_COUNT) * ACCELERATION_SCALE_G_PER_BIT;
   float averageYG = (calibrationSumRawY / (float)CALIBRATION_SAMPLE_COUNT) * ACCELERATION_SCALE_G_PER_BIT;
@@ -201,11 +223,21 @@ static void sampleAndFilterAcceleration() {
 }
 
 void initAccelerometer() {
-  Wire.beginTransmission(ACCELEROMETER_ADDRESS);
-  Wire.write(ACCELEROMETER_REGISTER_POWER_CTL);
-  Wire.write(ACCELEROMETER_MEASURE_MODE_VALUE);
-  Wire.endTransmission();
+  writeRegister(ACCELEROMETER_REGISTER_POWER_CTL, ACCELEROMETER_STANDBY_MODE_VALUE);
+  writeRegister(ACCELEROMETER_REGISTER_BW_RATE, ACCELEROMETER_RATE_DEFAULT);
+  writeRegister(ACCELEROMETER_REGISTER_ACT_INACT_CTL, ACCELEROMETER_ACTIVITY_DISABLED_VALUE);
+  writeRegister(ACCELEROMETER_REGISTER_INT_ENABLE, ACCELEROMETER_ACTIVITY_DISABLED_VALUE);
+  writeRegister(ACCELEROMETER_REGISTER_POWER_CTL, ACCELEROMETER_MEASURE_MODE_VALUE);
   delay(ACCELEROMETER_POWER_UP_DELAY_MS);
+}
+
+void armSleepWakeup() {
+  writeRegister(ACCELEROMETER_REGISTER_THRESH_ACT, ACCELEROMETER_ACTIVITY_THRESHOLD_CODE);
+  writeRegister(ACCELEROMETER_REGISTER_ACT_INACT_CTL, ACCELEROMETER_ACTIVITY_ENABLES);
+  clearPendingInterrupts();
+  writeRegister(ACCELEROMETER_REGISTER_INT_MAP, ACCELEROMETER_INTERRUPTS_INT1_VALUE);
+  writeRegister(ACCELEROMETER_REGISTER_INT_ENABLE, ACCELEROMETER_INTERRUPT_ACTIVITY_VALUE);
+  writeRegister(ACCELEROMETER_REGISTER_BW_RATE, ACCELEROMETER_RATE_LOW_POWER);
 }
 
 void startCalibration() {

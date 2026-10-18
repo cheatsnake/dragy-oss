@@ -100,7 +100,7 @@ body {
 #detail .topbar .date { margin-left: auto; }
 .chartbox { margin-top: 16px; }
 .charttitle { font-size: 14px; color: #999; margin-bottom: 4px; }
-canvas { display: block; width: 100%; height: 200px; }
+canvas { display: block; width: 100%; height: 180px; }
 </style>
 </head>
 <body>
@@ -519,6 +519,10 @@ canvas { display: block; width: 100%; height: 200px; }
   });
   events.addEventListener('result', function (event) {
     showResult(JSON.parse(event.data));
+  });
+  events.addEventListener('sleep', function () {
+    clearResult();
+    showMessage('Device asleep (wakes when the car moves)');
   });
 })();
 </script>

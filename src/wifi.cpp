@@ -33,3 +33,9 @@ void initWifi() {
   Serial.print(F("AP channel: "));
   Serial.println(WiFi.channel());
 }
+
+void stopWifi() {
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_OFF);
+  delay(100);
+}

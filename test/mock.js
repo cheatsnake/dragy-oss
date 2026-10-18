@@ -30,6 +30,7 @@
     mode: '0-100',
     satellites: 0,
     gpsOn: true,
+    asleep: false,
     calibrating: false,
     calibratingUntil: 0,
     nextSatelliteAt: 0,
@@ -153,7 +154,42 @@
     }));
   }
 
-  var bench = BenchLogic.createBench({ onResult: benchResult });
+  var bench = null;
+
+  function sleepDevice() {
+    if (model.asleep) {
+      return;
+    }
+    model.asleep = true;
+    dispatch('sleep', '{}');
+    updateStatus();
+  }
+
+  function wakeDevice() {
+    if (!model.asleep) {
+      return;
+    }
+    model.asleep = false;
+    model.stage = 'SEARCHING_GPS';
+    model.satellites = 0;
+    model.nextSatelliteAt = 0;
+    model.calibrating = false;
+    drive = null;
+    stoppedSince = Date.now();
+    bench = createBench();
+    updateStatus();
+  }
+
+  function createBench() {
+    var fresh = BenchLogic.createBench({
+      onResult: benchResult,
+      onSleep: sleepDevice
+    });
+    fresh.setMode(model.mode);
+    return fresh;
+  }
+
+  bench = createBench();
 
   function carSpeedAt(t) {
     if (!drive) {
@@ -201,7 +237,8 @@
   }
 
   function canLaunch() {
-    return model.stage === 'READY' &&
+    return !model.asleep &&
+      model.stage === 'READY' &&
       bench.getStage() === 'READY' &&
       bench.getMode() !== 'speedo' &&
       !drive &&
@@ -210,6 +247,10 @@
   }
 
   function startPull() {
+    if (model.asleep) {
+      wakeDevice();
+      return;
+    }
     if (!canLaunch()) {
       return;
     }
@@ -232,7 +273,7 @@
   }
 
   function startCalibration() {
-    if (bench.getStage() !== 'READY') {
+    if (model.asleep || bench.getStage() !== 'READY') {
       return;
     }
     model.calibrating = true;
@@ -240,6 +281,9 @@
   }
 
   function clearRuns() {
+    if (model.asleep) {
+      return;
+    }
     model.runs = [];
     model.nextId = 1;
     model.lastResultSeconds = null;
@@ -247,6 +291,9 @@
   }
 
   function toggleGps() {
+    if (model.asleep) {
+      return;
+    }
     model.gpsOn = !model.gpsOn;
     model.nextSatelliteAt = 0;
     if (!model.gpsOn) {
@@ -268,6 +315,10 @@
   }
 
   function step(now) {
+    if (model.asleep) {
+      return;
+    }
+
     if (model.calibrating && now >= model.calibratingUntil) {
       model.calibrating = false;
     }
@@ -361,8 +412,10 @@
   function updateStatus() {
     var status = document.getElementById('mock-status');
     if (status) {
-      status.textContent = model.mode + ' · ' + model.runs.length + ' run(s) · ' +
-        Math.round(bench.getSpeedKmh()) + ' km/h' + (canLaunch() ? ' · ready' : '');
+      status.textContent = model.asleep
+        ? model.mode + ' · ' + model.runs.length + ' run(s) · asleep'
+        : model.mode + ' · ' + model.runs.length + ' run(s) · ' +
+          Math.round(bench.getSpeedKmh()) + ' km/h' + (canLaunch() ? ' · ready' : '');
     }
     var gpsButton = document.getElementById('mock-gps');
     if (gpsButton) {
@@ -397,7 +450,8 @@
       ['mock-abort', 'Abort run', brakeCar],
       ['mock-recal', 'Recalibrate', startCalibration],
       ['mock-gps', 'GPS: on', toggleGps],
-      ['mock-clear', 'Clear runs', clearRuns]
+      ['mock-clear', 'Clear runs', clearRuns],
+      ['mock-sleepnow', 'Sleep now', sleepDevice]
     ].forEach(function (definition) {
       var button = document.createElement('button');
       button.id = definition[0];
@@ -428,6 +482,9 @@
   setInterval(function () {
     tickCount++;
     var now = Date.now();
+    if (model.asleep) {
+      return;
+    }
     step(now);
     if (tickCount % 2 === 0) {
       dispatch('state', JSON.stringify(stateJson()));
