@@ -57,6 +57,20 @@ void updateRunRecording() {
 }
 
 bool finishRunRecording(float resultSeconds, const char *mode, RunMeta &meta) {
+  updateRunRecording();
+
+  if (recordingActive) {
+    unsigned long now = millis();
+    float speedKmh = getSpeedKmh();
+    float accelerationG = 0.0f;
+    getAccelerationAtMillis(now, accelerationG);
+    unsigned long tMillis = now - launchMillis;
+
+    if (sampleCount == 0 || tMillis > samples[sampleCount - 1].tMillis) {
+      pushSample(tMillis, speedKmh, accelerationG);
+    }
+  }
+
   recordingActive = false;
 
   int id = getNextRunId();

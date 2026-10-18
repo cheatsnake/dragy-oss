@@ -237,6 +237,22 @@
     }
 
     function finishRun(now) {
+      updateRecording(now);
+
+      if (recordingActive) {
+        var speed = getSpeedKmh();
+        var acceleration = accelerationAtMillis(now);
+        var t = (now - recordingLaunchMillis) / 1000;
+
+        if (recordedSamples.length === 0 || t > recordedSamples[recordedSamples.length - 1].t) {
+          recordedSamples.push({
+            t: t,
+            s: speed,
+            a: acceleration === null ? 0 : acceleration
+          });
+        }
+      }
+
       recordingActive = false;
 
       var crossing = speedCrossingMillis(targetSpeedKmh());

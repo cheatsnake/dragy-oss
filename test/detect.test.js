@@ -5,6 +5,7 @@ var BenchLogic = require('./benchlogic.js');
 
 var LAG_MS = 300;
 var G = 9.81;
+var TARGETS = { '0-100': 100, '0-60': 60 };
 var failures = 0;
 
 function check(name, condition, detail) {
@@ -94,6 +95,16 @@ function assertRun(name, run, expected, options) {
       Math.abs(result - expected) < 0.15,
       'got ' + result.toFixed(3) + 's'
     );
+    var target = TARGETS[run.results[0].mode];
+    if (target) {
+      var samples = run.results[0].samples;
+      var lastSpeed = samples.length > 0 ? samples[samples.length - 1].s : 0;
+      check(
+        'recorded trace reaches ' + target + ' km/h',
+        samples.length > 0 && lastSpeed >= target,
+        'last sample ' + lastSpeed.toFixed(1) + ' km/h'
+      );
+    }
   }
 }
 
