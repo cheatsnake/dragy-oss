@@ -82,3 +82,7 @@ pio device monitor                        # serial console at 115200
 ```
 
 Mount the device level in the car (any orientation works — calibration detects the vertical axis automatically).
+
+## License
+
+Released under the [MIT License](LICENSE).
