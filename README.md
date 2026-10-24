@@ -1,13 +1,18 @@
 # Dragy OSS
 
-Firmware for a car performance timer ("dragy") with 0–100 km/h and 0–60 km/h measurement modes plus a plain speedometer mode, built on an ESP32-C3 SuperMini with a GPS module and an ADXL345/346 accelerometer. The UI is being migrated from a local OLED display and speaker to a Wi-Fi served web page; the device currently exposes a Wi-Fi access point with a live web UI, a JSON/SSE API and run history persisted in flash.
+Firmware for a car performance timer (aka [Dragy](https://www.godragy.com/)) with 0–100 km/h and 0–60 km/h measurement modes plus a plain speedometer mode, built on an ESP32-C3 SuperMini with a GPS module and an ADXL345/346 accelerometer.
+
+<img src="./docs/dragy-hardware.jpg" alt="Dragy hardware"/>
 
 ## Hardware
 
-| Module | Interface | Pins |
-|---|---|---|
-| GPS (PCAS, e.g. ATGM336H) | UART1 | RX=GPIO4, TX=GPIO3, 9600 -> 115200, 10 Hz, GPS+BDS |
-| Accelerometer ADXL345/346 | I2C | SDA=GPIO1, SCL=GPIO0, INT1=GPIO5, addr 0x53 |
+| Module                    | Interface | Pins                                            |
+| ------------------------- | --------- | ----------------------------------------------- |
+| GPS (PCAS, e.g. ATGM336H) | UART1     | RX=GPIO4, TX=GPIO3, (115200 Bd, 10 Hz, GPS+BDS) |
+| Accelerometer ADXL345/346 | I2C       | SDA=GPIO1, SCL=GPIO0, INT1=GPIO5, (addr 0x53)   |
+| ESP32-C3 Super Mini       |           | (RISC-V, 5V/3.3V power)                         |
+
+<img src="./docs/hardware-wiring.png" alt="Hardware wiring"/>
 
 ## How it works
 
@@ -29,11 +34,11 @@ After 5 minutes without accelerometer movement (and with GPS speed near zero, ne
 
 On power-up the device starts a Wi-Fi access point:
 
-| Setting | Value |
-|---|---|
-| SSID | `Dragy` |
-| Password | `11112222` |
-| URL | http://192.168.4.1 |
+| Setting  | Value              |
+| -------- | ------------------ |
+| SSID     | `Dragy`            |
+| Password | `11112222`         |
+| URL      | http://192.168.4.1 |
 
 The page can be tested on a computer without the device via `test/` (see `test/README.md`).
 
@@ -41,15 +46,15 @@ The page is a single dark, monochrome, dependency-free HTML/CSS/JS app served en
 
 ## HTTP API
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/` | web UI (single page) |
-| GET | `/api/state` | current stage, mode, speed, satellites, calibration, elapsed and last result |
-| GET | `/api/runs` | list of the last runs (`id`, `resultSeconds`, `date`, `mode`), newest first |
-| GET | `/api/runs/{id}` | full run including mode and chart samples |
-| GET | `/events` | SSE stream: `state` every 200 ms, `result` on finish, `sleep` when entering sleep mode, `ping` heartbeat |
-| POST | `/api/recalibrate` | request an accelerometer recalibration |
-| POST | `/api/mode/{mode}` | set the mode: `0-100`, `0-60` or `speedo` (aborts an active run) |
+| Method | Path               | Description                                                                                              |
+| ------ | ------------------ | -------------------------------------------------------------------------------------------------------- |
+| GET    | `/`                | web UI (single page)                                                                                     |
+| GET    | `/api/state`       | current stage, mode, speed, satellites, calibration, elapsed and last result                             |
+| GET    | `/api/runs`        | list of the last runs (`id`, `resultSeconds`, `date`, `mode`), newest first                              |
+| GET    | `/api/runs/{id}`   | full run including mode and chart samples                                                                |
+| GET    | `/events`          | SSE stream: `state` every 200 ms, `result` on finish, `sleep` when entering sleep mode, `ping` heartbeat |
+| POST   | `/api/recalibrate` | request an accelerometer recalibration                                                                   |
+| POST   | `/api/mode/{mode}` | set the mode: `0-100`, `0-60` or `speedo` (aborts an active run)                                         |
 
 Each successful run is stored in LittleFS as `/runs/<id>.json` with the mode and 10 Hz samples of elapsed time, speed and acceleration. The selected mode is stored in `/mode` and restored on boot.
 
