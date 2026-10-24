@@ -310,7 +310,7 @@ canvas { display: block; width: 100%; height: 180px; }
     }
   }
 
-  function drawChart(canvas, samples, pick, signed, baseMin, baseMax, step) {
+  function drawChart(canvas, samples, pick, signed, baseMin, baseMax, step, dedupe) {
     var dpr = window.devicePixelRatio || 1;
     var width = canvas.clientWidth || 320;
     var height = canvas.clientHeight || 200;
@@ -396,11 +396,19 @@ canvas { display: block; width: 100%; height: 180px; }
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.beginPath();
-    samples.forEach(function (sample, index) {
-      if (index === 0) {
-        ctx.moveTo(x(sample.t), y(pick(sample)));
+    var started = false;
+    var lastValue = null;
+    samples.forEach(function (sample) {
+      var value = Number(pick(sample)) || 0;
+      if (dedupe && started && value === lastValue) {
+        return;
+      }
+      lastValue = value;
+      if (!started) {
+        ctx.moveTo(x(sample.t), y(value));
+        started = true;
       } else {
-        ctx.lineTo(x(sample.t), y(pick(sample)));
+        ctx.lineTo(x(sample.t), y(value));
       }
     });
     ctx.stroke();
@@ -487,8 +495,8 @@ canvas { display: block; width: 100%; height: 180px; }
       dmodeEl.hidden = !run.mode;
       ddateEl.textContent = fmtDateTime(run.gpsDateTime);
       show('detail');
-      drawChart(speedchartEl, run.samples, function (sample) { return sample.s; }, false, 0, 100, 20);
-      drawChart(accelchartEl, run.samples, function (sample) { return sample.a; }, true, -0.2, 0.8, 0.2);
+      drawChart(speedchartEl, run.samples, function (sample) { return sample.s; }, false, 0, 100, 20, true);
+      drawChart(accelchartEl, run.samples, function (sample) { return sample.a; }, true, -0.2, 0.8, 0.2, false);
     }).catch(function () {
       openHistory();
     });
