@@ -6,31 +6,44 @@ Firmware for a car performance timer (aka [Dragy](https://www.godragy.com/)) wit
 
 ## Hardware
 
-| Module                    | Interface | Pins                                            |
-| ------------------------- | --------- | ----------------------------------------------- |
-| GPS (PCAS, e.g. ATGM336H) | UART1     | RX=GPIO4, TX=GPIO3, (115200 Bd, 10 Hz, GPS+BDS) |
-| Accelerometer ADXL345/346 | I2C       | SDA=GPIO1, SCL=GPIO0, INT1=GPIO5, (addr 0x53)   |
-| ESP32-C3 Super Mini       |           | (RISC-V, 5V/3.3V power)                         |
+| Module                    | Interface | Pins                                                  |
+| ------------------------- | --------- | ----------------------------------------------------- |
+| GPS (PCAS, e.g. ATGM336H) | UART1     | RX=GPIO4, TX=GPIO3, (3.3V, 115200 Bd, 10 Hz, GPS+BDS) |
+| Accelerometer ADXL345/346 | I2C       | SDA=GPIO1, SCL=GPIO0, INT1=GPIO5, (3.3V, addr 0x53)   |
+| ESP32-C3 Super Mini       |           | (RISC-V, 5V/3.3V)                                     |
 
 <img src="./docs/hardware-wiring.png" alt="Hardware wiring"/>
 
 ## How it works
 
-The firmware runs a state machine with 3 stages:
+The firmware uses a state machine with three stages.
 
-1. **Init** — GPS is bootstrapped; once a fix is found, accelerometer calibration starts.
-2. **Main** — current car speed is tracked continuously. After the car has moved and then stands still for 3 seconds, a single recalibration runs. Calibration runs in parallel with motion detection and discards itself if the car moves.
-3. **Bench** — a launch is detected only after 400 ms of sustained acceleration (4 consecutive samples above 0.2 g), and the run is confirmed only after GPS confirms the car really moves (speed rose 4 km/h above the speed at the moment the launch was detected). A launch is ignored while the car is already rolling: if the speed at the launch moment is above 3 km/h — or the speed history shows the car was already moving — nothing is armed. The timer start is backdated to the exact sample where acceleration began, using a timestamped accelerometer history buffer. When the car reaches the selected mode's target (100 km/h in 0–100 mode, 60 km/h in 0–60 mode) the exact crossing is linearly interpolated between GPS samples and the final time is logged over serial. A run silently aborts back to the ready state when speed plateaus for 3 s without progress, drops 3 km/h below its peak (braking/lift-off), or the car comes to a stop — so ordinary town driving never produces a result.
+1. **Init** — The firmware initializes the GPS module. When the GPS module gets a fix, the firmware starts the accelerometer calibration.
+2. **Main** — The firmware continuously monitors the speed of the car. When the car moves and then stops for 3 seconds, the firmware does one recalibration. The calibration operates in parallel with motion detection. If the car moves during calibration, the firmware cancels the calibration.
+3. **Bench** — The firmware detects a launch only after 400 ms of continuous acceleration. This condition occurs when 4 consecutive samples are above 0.2 g. The firmware confirms the run only when the GPS module shows that the car moves. This condition occurs when the speed increases 4 km/h above the speed at launch detection. The firmware ignores a launch when the car is already in motion. This condition occurs when the speed at the launch moment is above 3 km/h, or when the speed history shows previous movement. In this case, the firmware does not arm a measurement. The firmware sets the start of the timer to the exact sample where the acceleration started. It uses the timestamped accelerometer history buffer for this function. The target is 100 km/h in 0–100 mode and 60 km/h in 0–60 mode. When the car reaches the target, the firmware linearly interpolates the exact crossing between GPS samples. The firmware sends the final time to the serial console. The firmware cancels the run and returns to the ready state when one of these conditions occurs:
+   - The speed does not increase for 3 seconds.
+   - The speed decreases 3 km/h below its peak. This condition occurs during braking or lift-off.
+   - The car stops.
 
-The mode switcher on the live screen selects between **0–100**, **0–60** and **Speedo**; Speedo never arms a measurement at all. The selection is stored in flash and restored on power-up. Switching modes aborts any run in progress, and each saved run records the mode it was driven in.
+   Thus, the device does not record a result in normal town driving.
 
-Timing rules: accelerometer samples 10 times per second, GPS is fed continuously. The loop has no `delay()` — everything is scheduled with `millis()`, so calibration never blocks GPS reading. Calibration aborts itself if the car moves, so launch detection is never blocked for long.
+The mode switcher on the live screen selects **0–100**, **0–60**, or **Speedo**. Speedo mode never arms a measurement. The device stores the selection in flash memory and restores it at power-up. A mode change cancels a run in progress. Each saved run records the mode.
+
+Timing rules: The accelerometer takes 10 samples per second. The GPS module supplies data continuously. The loop contains no `delay()` function. The firmware schedules all operations with `millis()`. Thus, calibration does not block GPS reading. If the car moves during calibration, the calibration stops. Thus, launch detection is not blocked for a long time.
 
 ## Sleep mode
 
-After 5 minutes without accelerometer movement (and with GPS speed near zero, never mid-run or mid-calibration) the device shuts down to save power: the Wi-Fi AP and web server stop, the GPS module is asked to enter standby (best effort — only some modules honor `$PCAS12`), and the MCU enters deep sleep, leaving only the accelerometer's activity interrupt armed (~50 µA total). Movement above ~0.2 g asserts ADXL345 INT1 on GPIO5, which reboots the device; `setup()` logs "Woke by motion" and sends the GPS a standby-cancel plus hot-restart. The web UI shows a "Device asleep" notice before the AP disappears and reconnects on wake. A launch that starts at the exact moment of waking is missed, since boot and GPS re-fix take a few seconds.
+The device enters sleep mode after 5 minutes without accelerometer movement. At this time, the GPS speed must also be near zero. The device never enters sleep mode during a run or during calibration. To save power, the device takes these steps:
 
-## Web UI
+1. It stops the Wi-Fi access point and the web server.
+2. It sends a standby command to the GPS module. This step is best effort. Only some modules obey the `$PCAS12` command.
+3. The MCU enters deep sleep. Only the accelerometer activity interrupt stays enabled. The total current consumption is approximately 50 µA.
+
+An acceleration above approximately 0.2 g asserts the ADXL345 INT1 signal on GPIO5. This signal reboots the device. In `setup()`, the firmware writes "Woke by motion" to the serial console. It sends a standby-cancel command and a hot-restart command to the GPS module.
+
+The web UI shows a "Device asleep" notice before the access point stops. The web UI reconnects after wake-up. A launch that starts at the exact moment of wake-up is not recorded. The boot and the new GPS fix take a few seconds.
+
+## Connection
 
 On power-up the device starts a Wi-Fi access point:
 
@@ -41,8 +54,6 @@ On power-up the device starts a Wi-Fi access point:
 | URL      | http://192.168.4.1 |
 
 The page can be tested on a computer without the device via `test/` (see `test/README.md`).
-
-The page is a single dark, monochrome, dependency-free HTML/CSS/JS app served entirely from flash. The live screen mirrors the old OLED (satellite count, blinking calibration dot, big current speed, elapsed timer during a run, result overlay after a finish) and updates over SSE. A three-way mode switcher (0–100 / 0–60 / Speedo) sits in the top bar. The History view lists the last 10 runs tagged with their mode; each opens a detail view with the final time, mode and hand-drawn speed and acceleration charts. A Recalibrate button triggers accelerometer recalibration.
 
 ## HTTP API
 
