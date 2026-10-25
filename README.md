@@ -8,9 +8,9 @@ Firmware for a car performance timer (aka [Dragy](https://www.godragy.com/)) wit
 
 | Module                    | Interface | Pins                                                  |
 | ------------------------- | --------- | ----------------------------------------------------- |
+| ESP32-C3 Super Mini       |           | (RISC-V, 5V/3.3V)                                     |
 | GPS (PCAS, e.g. ATGM336H) | UART1     | RX=GPIO4, TX=GPIO3, (3.3V, 115200 Bd, 10 Hz, GPS+BDS) |
 | Accelerometer ADXL345/346 | I2C       | SDA=GPIO1, SCL=GPIO0, INT1=GPIO5, (3.3V, addr 0x53)   |
-| ESP32-C3 Super Mini       |           | (RISC-V, 5V/3.3V)                                     |
 
 <img src="./docs/hardware-wiring.png" alt="Hardware wiring"/>
 
